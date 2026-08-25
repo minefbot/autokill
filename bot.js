@@ -983,6 +983,31 @@ function scheduleReconnect () {
 }
 
 // ---------------- 底层兼容补丁 ----------------
+/**
+ * 1.21.2+ tick 同步补丁（重要！假人“无法移动”的关键修复）
+ * 原版客户端：每 tick 发送 client_tick_end（约 20 次/秒）；世界加载完成后发送一次 player_loaded。
+ * 服务器（尤其带反作弊/挂机检测的服，如本服高频 common_ping 探测）会据此验证客户端与服务器
+ * tick 同步；mineflayer 默认不发这两个包 → 服务器判定客户端失步 → 静默无视所有移动包
+ * （表现为：原版端能移动，假人无论怎么发包都纹丝不动）。这里补齐。
+ */
+function enableTickSync (bot) {
+  if (!bot || !bot._client) return
+  // 每 tick 发送 client_tick_end（进入游戏后 physicTick 每 50ms 触发一次）
+  bot.on('physicTick', () => {
+    try { bot._client.write('tick_end', {}) } catch {}
+  })
+  // 世界加载完成后发送一次 player_loaded（spawn/重生/传送后均可能触发世界加载）
+  const sendPlayerLoaded = () => {
+    setTimeout(() => {
+      try {
+        bot._client.write('player_loaded', {})
+        log('[登录] 已发送 player_loaded（客户端加载完成）')
+      } catch {}
+    }, 3000)
+  }
+  bot.on('spawn', sendPlayerLoaded)
+  bot.on('respawn', sendPlayerLoaded)
+}
 // 1) mineflayer 4.30+ 的 bot.chat 内部调用 bot._client.chat(message)，
 //    而该方法是 minecraft-protocol 在登录（onReady）后才赋值的；
 //    若连接卡在登录前或上游版本不赋值，就会抛 "bot._client.chat is not a function"。
@@ -1043,6 +1068,7 @@ function createBot () {
   ensureClientChat(bot._client)
   autoAcceptResourcePack(bot._client)
   bot.loadPlugin(pathfinder)
+  enableTickSync(bot)
   // mineflayer 4.20+ 的 loadPlugin 只排队插件，连接成功（inject_allowed）后才注入，
   // 因此 bot.pathfinder 此时尚不存在，需等注入后再设置寻路参数
   bot.once('inject_allowed', () => {
