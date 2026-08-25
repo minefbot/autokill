@@ -1007,6 +1007,27 @@ function enableTickSync (bot) {
   }
   bot.on('spawn', sendPlayerLoaded)
   bot.on('respawn', sendPlayerLoaded)
+  
+  // 增加移动包发送频率：每 50ms 发送一次位置更新（原版客户端约 20 次/秒）
+  let lastMoveTime = 0
+  bot.on('physicTick', () => {
+    const now = Date.now()
+    if (now - lastMoveTime >= 50) { // 20 次/秒
+      try {
+        if (bot.entity) {
+          bot._client.write('position', {
+            x: bot.entity.position.x,
+            y: bot.entity.position.y,
+            z: bot.entity.position.z,
+            yaw: bot.entity.yaw,
+            pitch: bot.entity.pitch,
+            onGround: true
+          })
+        }
+      } catch {}
+      lastMoveTime = now
+    }
+  })
 }
 // 1) mineflayer 4.30+ 的 bot.chat 内部调用 bot._client.chat(message)，
 //    而该方法是 minecraft-protocol 在登录（onReady）后才赋值的；
@@ -1039,6 +1060,43 @@ function ensureClientChat (client) {
       })
     }
   }
+  
+  // 2) 增强移动包发送：确保每 50ms 发送一次位置更新，即使没有移动
+  function enhanceMovementPackets (client) {
+    if (!client || !client.write) return
+    const originalWrite = client.write
+    client.write = (name, params) => {
+      if (name === 'position' || name === 'position_look') {
+        // 确保位置更新包包含正确的 onGround 状态
+        params.onGround = true
+        if (params.flags) params.flags.onGround = true
+      }
+      return originalWrite.call(client, name, params)
+    }
+    
+    // 每 50ms 发送一次位置更新（增强版，确保移动包频率）
+    let lastPosUpdate = 0
+    client.on('tick', () => {
+      const now = Date.now()
+      if (now - lastPosUpdate >= 50) { // 20 次/秒
+        try {
+          if (client.bot && client.bot.entity) {
+            client.write('position', {
+              x: client.bot.entity.position.x,
+              y: client.bot.entity.position.y,
+              z: client.bot.entity.position.z,
+              yaw: client.bot.entity.yaw,
+              pitch: client.bot.entity.pitch,
+              onGround: true
+            })
+          }
+        } catch {}
+        lastPosUpdate = now
+      }
+    })
+  }
+  
+  enhanceMovementPackets(client)
 }
 
 // 2) 服务器在配置阶段下发 add_resource_pack（强制资源包）时会等客户端回包后才发
