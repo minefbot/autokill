@@ -298,6 +298,12 @@ setTimeout(() => {
     const inWindow = clickTimes.filter(x => x >= t && x < t + 1000).length
     if (inWindow > maxPerSec) maxPerSec = inWindow
   }
+  if (maxPerSec > 4) {
+    console.log('  clickTimes 明细（含间隔）:')
+    clickTimes.forEach((t, i) => {
+      console.log(`    #${i} ${t}${i ? ' (+' + (t - clickTimes[i - 1]) + 'ms)' : ''}`)
+    })
+  }
   check(`容器操作限速（峰值 ${maxPerSec}/秒 ≤ 4）`, maxPerSec <= 4)
   const remaining = fakeBot.inventory.slots.slice(9, 45).filter(Boolean)
   check('存仓后物品栏只剩剑/熟猪肉', remaining.every(i => i.name === 'iron_sword' || i.name === 'cooked_porkchop'))
