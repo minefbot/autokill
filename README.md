@@ -72,6 +72,7 @@ npm run start:auto          # 或 --auto-start：登录后直接开始工作
 - 3D 视图：1.21.11 的客户端 bundle 与资源由 `npm run build:viewer` + `npm run gen:assets` 重建生成（仓库已附带产物，一般无需重建）；1.21.5+ 新增方块的纹理缺失时会显示棋盘格占位；
 - 掉落物判定依赖实体事件顺序，假人会在目标死亡瞬间扫描一次死亡点 2 格内的物品实体兜底；
 - 击杀归属：假人只拾取自己参与击杀（最后攻击 4 秒内死亡）的目标掉落物，其他玩家打死的掉落物不抢；
+- **1.21.2+ tick 同步（假人能移动的关键）**：严格服要求客户端每 tick 发 `client_tick_end`、世界加载完发 `player_loaded`，mineflayer 默认不发 → 表现为“原版能动、假人所有移动包被静默无视”。`bot.js` 的 `enableTickSync()` 已补齐（详见 `tools/` 与 Pi mineflayer skill 的 `references/minecraft-1.21-movement.md`）；
 - 日志：时间戳 + 分类标签（`[状态]/[移动]/[路径]/[击杀]/[掉落]/[攻击]` 等），每 30 秒输出一次状态快照，寻路卡住会输出诊断日志，并实时推送到网页。
 
 ## 测试
