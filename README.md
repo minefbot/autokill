@@ -94,3 +94,11 @@ node tools/mail-read.js      # 读取账号邮件（排查冻结/惩罚通知）
 ```
 
 > `STATUS_LOG_MS` 环境变量可调细状态日志间隔（默认 30000ms，调试可设如 8000）。
+
+移动排查开关（`bot.js`，排查“假人无法移动”时按需组合设置）：
+
+```bash
+NO_SPRINT=1 npm run start:auto          # 禁用疾跑（部分反作弊拒绝疾跑移动）
+FORCE_ON_GROUND=1 npm run start:auto    # 移动包强制 onGround=true（防“飞行”误判冻结）
+NO_WARP=1 npm run start:auto            # 跳过 /warp（出生点即工作点时用）
+```

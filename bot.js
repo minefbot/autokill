@@ -52,6 +52,10 @@ const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10)
 const VIEWER_PORT = parseInt(process.env.VIEWER_PORT || '3001', 10)
 // --auto-start：带该参数则登录后直接开始工作；否则登录后待机，等待网页唤醒
 const AUTO_START = process.argv.includes('--auto-start')
+// 移动调试开关（排查“假人无法移动”用，正常运行不需要设置）
+const NO_SPRINT = process.env.NO_SPRINT === '1'              // 禁用疾跑
+const FORCE_ON_GROUND = process.env.FORCE_ON_GROUND === '1'  // 移动包强制 onGround=true
+const NO_WARP = process.env.NO_WARP === '1'                  // 跳过 /warp（出生点即工作点时用）
 
 // ---------------- 常量 ----------------
 const TARGET_RADIUS = 50          // 目标搜索半径（格）
@@ -376,7 +380,9 @@ function registerEvents () {
     await sleep(1000)
     // 用 /warp 菜单传送到工作点：等待箱子界面打开 → 拿起第一行第二个物品 → 等 3.5s 传送生效
     // 传送失败则保持待机重试，绝不直接开始工作
-    if (!(await warpToWork())) {
+    if (NO_WARP) {
+      log('NO_WARP=1：跳过 /warp 菜单，直接在出生点开始（出生点即工作点时用）')
+    } else if (!(await warpToWork())) {
       log('warp 传送失败（多次重试未成功），保持待机，不开始工作')
       return
     }
@@ -1040,7 +1046,25 @@ function createBot () {
   // mineflayer 4.20+ 的 loadPlugin 只排队插件，连接成功（inject_allowed）后才注入，
   // 因此 bot.pathfinder 此时尚不存在，需等注入后再设置寻路参数
   bot.once('inject_allowed', () => {
-    bot.pathfinder.setMovements(new CustomMovements(bot))
+    const movements = new CustomMovements(bot)
+    if (NO_SPRINT) {
+      movements.allowSprinting = false
+      log('[移动] NO_SPRINT=1：已禁用疾跑（仅普通行走）')
+    }
+    bot.pathfinder.setMovements(movements)
+    if (FORCE_ON_GROUND) {
+      // 拦截所有移动包，强制 onGround=true（mineflayer 在非整方块上站立时
+      // onGround 会闪烁 false，部分反作弊会判“飞行”冻结，原版客户端恒为 true）
+      const rawWrite = bot._client.write.bind(bot._client)
+      bot._client.write = (name, params) => {
+        if (name === 'position' || name === 'look' || name === 'position_look') {
+          params.onGround = true
+          if (params.flags) params.flags.onGround = true
+        }
+        return rawWrite(name, params)
+      }
+      log('[移动] FORCE_ON_GROUND=1：移动包强制 onGround=true')
+    }
   })
   registerEvents()
   // 网页 3D 视图绑定（重连时重建）：attachBot 是 viewerServer 模块级函数，
