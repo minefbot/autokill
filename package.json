@@ -1,0 +1,14 @@
+{
+  "name": "mcbot",
+  "version": "1.1.0",
+  "description": "Minecraft 假人：狩猎 mooshroom/cow、自动进食、自动存仓、网页监控",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node --max-old-space-size=1024 bot.js",
+    "start:auto": "node --max-old-space-size=1024 bot.js --auto-start",
+    "build:viewer": "cd web/viewer-src && webpack",
+    "gen:assets": "node tools/gen-viewer-assets.js",
+    "test": "node test/smoke.js"
+  },
+  "license": "MIT"
+}

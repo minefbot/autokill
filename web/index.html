@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC 假人监控台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; background: #10131a; color: #d8dee9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: #1a1f2b; border-bottom: 1px solid #2a3040; }
+  header .title { font-weight: bold; font-size: 16px; }
+  .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; background: #2a3040; }
+  .badge.on { background: #2e7d32; }
+  .badge.paused { background: #e65100; }
+  .badge.dead { background: #b71c1c; }
+  .btn { background: #2a3040; color: #d8dee9; border: 1px solid #3a4154; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #353d52; }
+  .btn.primary { background: #1565c0; border-color: #1e88e5; }
+  .btn.warn { background: #e65100; border-color: #f57c00; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #viewerWrap { flex: 1; position: relative; min-width: 0; }
+  #viewerWrap iframe { width: 100%; height: 100%; border: 0; background: #000; }
+  #viewerOverlay { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+  #viewerOverlay .row { display: flex; gap: 6px; align-items: center; background: rgba(16,19,26,.75); padding: 6px 10px; border-radius: 8px; }
+  #viewerOverlay label { font-size: 12px; color: #9aa4b5; }
+  #viewerOverlay input[type=range] { width: 110px; }
+  #viewerOverlay .camBtn.active { background: #1565c0; }
+  #sidebar { width: 330px; background: #161b26; border-left: 1px solid #2a3040; display: flex; flex-direction: column; min-height: 0; }
+  #sidebar section { border-bottom: 1px solid #222838; padding: 10px 14px; }
+  #sidebar h3 { font-size: 13px; color: #9aa4b5; margin-bottom: 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 13px; }
+  .grid .k { color: #9aa4b5; }
+  .grid .v { text-align: right; font-family: Consolas, monospace; }
+  #statusTarget { color: #ffb74d; }
+  #chatPanel { flex: 0 0 auto; max-height: 30%; display: flex; flex-direction: column; }
+  #chatList { overflow-y: auto; font-size: 13px; flex: 1; min-height: 60px; }
+  #chatList .pm { color: #a5d6a7; }
+  #chatList .pm .u { color: #64b5f6; font-weight: bold; }
+  #chatList .sys { color: #9aa4b5; }
+  #chatInputRow { display: flex; gap: 6px; margin-top: 8px; }
+  #chatInput { flex: 1; background: #1a1f2b; border: 1px solid #3a4154; color: #d8dee9; border-radius: 6px; padding: 6px 8px; }
+  #logPanel { flex: 1; display: flex; flex-direction: column; min-height: 80px; }
+  #logList { flex: 1; overflow-y: auto; font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; }
+  #logList div { border-bottom: 1px solid #1c212e; padding: 1px 0; }
+  #logList .warn { color: #ffb74d; }
+  #logList .err { color: #ef5350; }
+  #conn { font-size: 12px; color: #9aa4b5; margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">🐄 MC 假人监控台</span>
+  <span id="badgeConn" class="badge">未连接</span>
+  <span id="badgeState" class="badge">启动中</span>
+  <span id="badgePause" class="badge">待机</span>
+  <button id="btnPause" class="btn warn">唤醒</button>
+  <span id="uptime" style="font-size:12px;color:#9aa4b5"></span>
+  <span id="conn"></span>
+</header>
+<main>
+  <div id="viewerWrap">
+    <iframe id="viewerFrame" src="about:blank" allowfullscreen></iframe>
+    <div id="viewerOverlay">
+      <div class="row">
+        <button class="btn camBtn active" data-cam="orbit">轨道</button>
+        <button class="btn camBtn" data-cam="first">第一人称</button>
+        <button class="btn camBtn" data-cam="third">第三人称</button>
+        <button class="btn camBtn" data-cam="top">俯视图</button>
+      </div>
+      <div class="row">
+        <label>3D 渲染 fps</label>
+        <input id="viewerFps" type="range" min="0" max="30" step="1" value="0">
+        <span id="viewerFpsVal" style="font-size:12px;width:36px">不限</span>
+      </div>
+      <div class="row">
+        <label>状态刷新 fps</label>
+        <input id="statusFps" type="range" min="1" max="20" step="1" value="2">
+        <span id="statusFpsVal" style="font-size:12px;width:36px">2</span>
+      </div>
+    </div>
+  </div>
+  <div id="sidebar">
+    <section>
+      <h3>工作状态</h3>
+      <div class="grid">
+        <span class="k">状态</span><span class="v" id="stState">-</span>
+        <span class="k">坐标</span><span class="v" id="stPos">-</span>
+        <span class="k">朝向</span><span class="v" id="stLook">-</span>
+        <span class="k">生命</span><span class="v" id="stHp">-</span>
+        <span class="k">饱食度</span><span class="v" id="stFood">-</span>
+        <span class="k">饱和度</span><span class="v" id="stSat">-</span>
+        <span class="k">维度</span><span class="v" id="stDim">-</span>
+        <span class="k">当前目标</span><span class="v" id="stTarget">-</span>
+        <span class="k">物品栏</span><span class="v" id="stInv">-</span>
+        <span class="k">手持</span><span class="v" id="stSword">-</span>
+        <span class="k">附近玩家</span><span class="v" id="stPlayers">-</span>
+        <span class="k">待拾取掉落</span><span class="v" id="stDrops">-</span>
+      </div>
+    </section>
+    <section id="chatPanel">
+      <h3>聊天（含其他玩家）</h3>
+      <div id="chatList"></div>
+      <div id="chatInputRow">
+        <input id="chatInput" placeholder="输入聊天或指令，回车发送…">
+        <button id="btnChat" class="btn primary">发送</button>
+      </div>
+    </section>
+    <section id="logPanel">
+      <h3>运行日志</h3>
+      <div id="logList"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id)
+const state = { paused: true, connected: false, status: null, cam: 'orbit' }
+let ws = null
+
+function connect () {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  ws = new WebSocket(`${proto}://${location.host}`)
+  ws.onopen = () => { $('badgeConn').textContent = '已连接'; $('badgeConn').classList.add('on') }
+  ws.onclose = () => {
+    $('badgeConn').textContent = '断开，重连中…'
+    $('badgeConn').classList.remove('on')
+    setTimeout(connect, 2000)
+  }
+  ws.onmessage = (ev) => {
+    let m
+    try { m = JSON.parse(ev.data) } catch { return }
+    handle(m)
+  }
+}
+
+function handle (m) {
+  switch (m.type) {
+    case 'hello':
+      document.title = `${m.data.username} - MC 假人监控台`
+      $('conn').textContent = `${m.data.username} @ ${m.data.version}${m.data.autoStart ? '' : '（待机模式）'}`
+      state.paused = m.data.paused
+      $('viewerFrame').src = `http://${location.hostname}:${m.data.viewerPort}/`
+      renderPause()
+      break
+    case 'status': renderStatus(m.data); break
+    case 'paused':
+      state.paused = m.paused
+      renderPause()
+      break
+    case 'log': addLog(m.line); break
+    case 'chat': addChat(m.username, m.message); break
+    case 'sys': addSys(m.text); break
+  }
+}
+
+function renderPause () {
+  const b = $('badgePause')
+  if (state.paused) {
+    b.textContent = '待机'
+    b.className = 'badge paused'
+    $('btnPause').textContent = '唤醒'
+    $('btnPause').className = 'btn warn'
+  } else {
+    b.textContent = '工作中'
+    b.className = 'badge on'
+    $('btnPause').textContent = '暂停'
+    $('btnPause').className = 'btn'
+  }
+}
+
+const STATE_CN = { startup: '启动中', hunt: '狩猎', eat: '进食', deposit: '存仓', dead: '死亡' }
+
+function renderStatus (d) {
+  state.status = d
+  $('stState').textContent = STATE_CN[d.state] || d.state
+  const b = $('badgeState')
+  if (d.state === 'dead') { b.textContent = '死亡'; b.className = 'badge dead' }
+  else if (d.paused) { b.textContent = '待机'; b.className = 'badge paused' }
+  else { b.textContent = STATE_CN[d.state] || d.state; b.className = 'badge on' }
+  $('stPos').textContent = `${d.pos.x.toFixed(1)}, ${d.pos.y.toFixed(1)}, ${d.pos.z.toFixed(1)}`
+  $('stLook').textContent = `yaw ${d.pos.yaw.toFixed(0)}° pitch ${d.pos.pitch.toFixed(0)}°`
+  $('stHp').textContent = d.health.toFixed(1)
+  $('stFood').textContent = d.food.toFixed(1)
+  $('stSat').textContent = d.saturation.toFixed(1)
+  $('stDim').textContent = d.dimension || '-'
+  $('stTarget').textContent = d.target ? `${d.target.name} ${d.target.dist.toFixed(1)}格` : '无'
+  $('stInv').textContent = `${d.inventory.used}/36${d.inventory.full ? '（满）' : ''}`
+  $('stSword').textContent = d.inventory.sword || '空手'
+  $('stPlayers').textContent = d.players.length ? d.players.join(', ') : '无'
+  $('stDrops').textContent = d.drops
+  $('uptime').textContent = `运行 ${Math.floor(d.uptime / 60)}分${d.uptime % 60}秒`
+}
+
+function addLog (line) {
+  const div = document.createElement('div')
+  if (/异常|失败|错误|警告/.test(line)) div.className = line.includes('异常') || line.includes('失败') ? 'err' : 'warn'
+  div.textContent = line
+  const list = $('logList')
+  list.appendChild(div)
+  while (list.children.length > 300) list.removeChild(list.firstChild)
+  list.scrollTop = list.scrollHeight
+}
+
+function addChat (username, message) {
+  const div = document.createElement('div')
+  div.className = 'pm'
+  div.innerHTML = `<span class="u">&lt;${escapeHtml(username)}&gt;</span> ${escapeHtml(message)}`
+  appendChat(div)
+}
+
+function addSys (text) {
+  const div = document.createElement('div')
+  div.className = 'sys'
+  div.textContent = text
+  appendChat(div)
+}
+
+function appendChat (div) {
+  const list = $('chatList')
+  list.appendChild(div)
+  while (list.children.length > 100) list.removeChild(list.firstChild)
+  list.scrollTop = list.scrollHeight
+}
+
+function escapeHtml (s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function send (obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)) }
+
+// 相机模式
+document.querySelectorAll('.camBtn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.camBtn').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    state.cam = btn.dataset.cam
+    send({ type: 'camera', mode: state.cam })
+  }
+})
+
+// 3D 渲染 fps
+$('viewerFps').oninput = () => {
+  const v = parseInt($('viewerFps').value, 10)
+  $('viewerFpsVal').textContent = v === 0 ? '不限' : v
+  send({ type: 'set_fps_viewer', fps: v })
+}
+
+// 状态刷新 fps
+$('statusFps').oninput = () => {
+  const v = parseInt($('statusFps').value, 10)
+  $('statusFpsVal').textContent = v
+  send({ type: 'set_fps', fps: v })
+}
+
+// 暂停/唤醒
+$('btnPause').onclick = () => send({ type: 'set_paused', paused: !state.paused })
+
+// 聊天
+function sendChat () {
+  const v = $('chatInput').value.trim()
+  if (!v) return
+  send({ type: 'chat', text: v })
+  $('chatInput').value = ''
+  addSys(`> ${v}`)
+}
+$('btnChat').onclick = sendChat
+$('chatInput').onkeydown = (e) => { if (e.key === 'Enter') sendChat() }
+
+connect()
+</script>
+</body>
+</html>

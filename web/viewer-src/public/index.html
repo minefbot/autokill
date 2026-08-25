@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>mcbot 3D 视图</title>
+    <style type="text/css">
+      html { overflow: hidden; }
+      html, body { height: 100%; margin: 0; padding: 0; background: #000; }
+      canvas { height: 100%; width: 100%; display: block; margin: 0; padding: 0; }
+
+      /* 状态栏：悬浮于 canvas 之上，不拦截鼠标（pointer-events: none） */
+      #pvStatus {
+        position: fixed; left: 0; right: 0; bottom: 0;
+        z-index: 100; pointer-events: none;
+        font: 12px/1.6 system-ui, "Microsoft YaHei", sans-serif;
+        color: #cfd8e3; background: rgba(16, 19, 26, .72);
+        padding: 5px 12px; text-align: center;
+        transition: opacity .4s;
+      }
+      #pvStatus.hidden { opacity: 0; }
+      #pvStatus .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+      #pvStatus.on .dot { background: #4caf50; }
+      #pvStatus.off .dot { background: #f44336; }
+      #pvStatus.wait .dot { background: #ffb300; animation: blink 1s infinite; }
+      @keyframes blink { 50% { opacity: .3; } }
+    </style>
+  </head>
+  <body>
+    <div id="pvStatus" class="wait"><span class="dot"></span><span id="pvText">正在连接服务器…</span></div>
+
+    <!-- 3D 视图客户端 bundle（webpack 构建产物，含 1.21.11 支持） -->
+    <script type="text/javascript" src="index.js"></script>
+
+    <!-- 轻量状态栏：仅轮询 HTTP 状态接口，不占用 socket.io 连接 -->
+    <script>
+      (function () {
+        var el = document.getElementById('pvStatus')
+        var text = document.getElementById('pvText')
+        function setState (cls, msg) {
+          el.className = cls
+          text.textContent = msg
+        }
+        function poll () {
+          fetch('api/status', { cache: 'no-store' })
+            .then(function (r) { return r.json() })
+            .then(function (s) {
+              if (s.connected) {
+                setState('on', '已连接 ' + (s.version || '') + ' · 3D 视图运行中')
+                setTimeout(function () { el.classList.add('hidden') }, 2500)
+              } else {
+                setState('wait', '等待 bot 连接服务器…')
+              }
+            })
+            .catch(function () {
+              setState('off', '无法连接 3D 视图服务（端口 ' + location.port + '）')
+            })
+        }
+        poll()
+        setInterval(poll, 1500)
+      })()
+    </script>
+  </body>
+</html>

@@ -1,0 +1,853 @@
+﻿/**
+ * Minecraft 假人（mineflayer）
+ *
+ * 行为流程：
+ *  1. 进服 1.5s 后 /login <PSW>，1s 后 /home work，开始主循环
+ *  2. 寻找 50 格内的 mooshroom/cow（mooshroom 优先、取最近），寻路保持 ≥2 格距离，
+ *     切剑攻击直到目标死亡；拾取死亡 3 秒内、距死亡位置 2 格内的掉落物
+ *  3. 避让其他玩家（靠近玩家的方向寻路权重降低，但非完全不可通行）
+ *  4. 物品栏满 → /home cangku → 等 3.5s（期间不移动、原地攻击附近目标、不捡掉落物），
+ *     坐标未变则重试；传送成功后打开 barrel 把背包中除盔甲/剑/熟猪肉外所有物品
+ *     移入容器（限速 4 次/秒），容器满则每秒查看、10s 后每 10s 查看；
+ *     放完后 /back 等 3.5s 继续
+ *  5. 生命<12 且饱和度<=19，或饱食度<16 时，把熟猪肉放入副手（不在副手才手动放），
+ *     食用直到数量减少，5s 冷却；熟猪肉耗尽则下线
+ *  6. 死亡 → /back 等 3.5s 继续
+ */
+require('dotenv').config({ quiet: true })
+
+const mineflayer = require('mineflayer')
+const { pathfinder, Movements } = require('mineflayer-pathfinder')
+
+// goals 兼容 mineflayer-pathfinder 2.4+（独立子模块）与旧版本
+let goalsMod
+try {
+  goalsMod = require('mineflayer-pathfinder/goals')
+} catch {
+  goalsMod = require('mineflayer-pathfinder').goals
+}
+const { GoalNear, GoalFollow } = goalsMod
+
+// ---------------- 配置（.env） ----------------
+const HOST = process.env.HOST || 'localhost'
+const PORT = parseInt(process.env.PORT || '25565', 10)
+// 注意：不能用 USERNAME —— 它是 Windows 内置环境变量（当前登录用户名），
+// dotenv 不会覆盖已存在的环境变量，导致 .env 里的用户名永远不生效。
+const BOT_USERNAME = process.env.BOT_USERNAME || 'XQYXQY'
+const VERSION = process.env.VERSION || '1.21.11'
+const AUTH = process.env.AUTH || 'offline'
+const PSW = process.env.PSW
+if (!PSW) {
+  console.error('[启动失败] 缺少环境变量 PSW（AuthMe /login 密码），请在 .env 中配置后重启')
+  process.exit(1)
+}
+
+// 网页监控配置
+const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10)
+const VIEWER_PORT = parseInt(process.env.VIEWER_PORT || '3001', 10)
+// --auto-start：带该参数则登录后直接开始工作；否则登录后待机，等待网页唤醒
+const AUTO_START = process.argv.includes('--auto-start')
+
+// ---------------- 常量 ----------------
+const TARGET_RADIUS = 50          // 目标搜索半径（格）
+const STANDOFF = 2.5              // 与目标保持的距离（≥2 格）
+const ATTACK_RANGE = 3.2          // 剑的攻击距离
+const ATTACK_INTERVAL = 900       // 两次攻击的最小间隔 ms
+const DROP_WINDOW_MS = 3000       // 掉落物判定：目标死亡后 3 秒内
+const DROP_RADIUS = 2             // 掉落物判定：距死亡位置 < 2 格
+const DEPOSIT_WAIT_MS = 3500      // /home cangku 与 /back 后的等待时长
+const EAT_COOLDOWN_MS = 5000      // 食用后 5 秒内不再食用
+const CONTAINER_OP_INTERVAL = 250 // 容器操作限速：一秒最多 4 次
+const SWORD_NAMES = new Set(['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword'])
+const SWORD_RANK = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword']
+const TARGET_NAMES = new Set(['cow', 'mooshroom', 'mooshroom_cow'])
+const PORKCHOP = 'cooked_porkchop'
+
+// ---------------- 全局状态 ----------------
+let bot = null
+let state = 'startup'       // startup | hunt | eat | deposit | dead
+let running = false
+let intentionalQuit = false
+let botDead = false
+let paused = !AUTO_START    // 待机模式：登录后等待网页唤醒
+let mainLoopActive = false  // 主循环是否在运行（避免重复启动）
+let lastEatTime = 0
+let noPathCount = 0
+let noPathFlag = false
+const recentDeaths = []     // [{ pos: Vec3, time: number }]
+const dropIds = new Set()   // 已确认掉落物的实体 id
+const deadIds = new Set()   // 已死亡/消失的实体 id
+let avoidPlayers = []       // 需要避让的玩家坐标（定期更新）
+
+// 网页监控：日志/聊天缓冲
+const logBuffer = []
+const chatBuffer = []
+let webApi = null
+let viewerCtl = null
+let viewerServer = null
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+function log (...a) {
+  const line = `[${new Date().toLocaleTimeString()}] ${a.join(' ')}`
+  console.log(line)
+  logBuffer.push(line)
+  if (logBuffer.length > 300) logBuffer.shift()
+  if (webApi) webApi.broadcast({ type: 'log', line })
+}
+
+function webBroadcast (msg) { if (webApi) webApi.broadcast(msg) }
+
+// ---------------- 寻路（靠近玩家的方向权重降低） ----------------
+class CustomMovements extends Movements {
+  constructor (bot) { super(bot) }
+
+  getCost (node) {
+    let cost = super.getCost(node)
+    if (cost === Infinity) return cost
+    for (const p of avoidPlayers) {
+      const dx = node.x - p.x
+      const dz = node.z - p.z
+      const d = Math.sqrt(dx * dx + dz * dz)
+      if (d < 4) cost += (4 - d) * 2 // 玩家 4 格内代价递增：避让但非完全不能靠近
+    }
+    return cost
+  }
+}
+
+function updateAvoidPlayers () {
+  if (!bot || !bot.entity) return
+  avoidPlayers = Object.values(bot.entities)
+    .filter(e => e.type === 'player' && e.id !== bot.entity.id && e.position &&
+      bot.entity.position.distanceTo(e.position) <= 16)
+    .map(e => e.position.clone())
+}
+setInterval(updateAvoidPlayers, 500)
+
+// ---------------- 工具函数 ----------------
+function isTargetEntity (e) {
+  return e && e.position && TARGET_NAMES.has(e.name)
+}
+
+/** 在指定范围内找目标：mooshroom 优先，同类型取最近 */
+function findTargetInRange (range) {
+  const candidates = Object.values(bot.entities).filter(e =>
+    isTargetEntity(e) && !deadIds.has(e.id) &&
+    bot.entity.position.distanceTo(e.position) <= range)
+  if (!candidates.length) return null
+  const mooshrooms = candidates.filter(e => e.name === 'mooshroom' || e.name === 'mooshroom_cow')
+  const pool = mooshrooms.length ? mooshrooms : candidates
+  pool.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
+  return pool[0]
+}
+
+function findTarget () { return findTargetInRange(TARGET_RADIUS) }
+
+/** 物品栏中最好的剑 */
+function bestSword () {
+  const items = bot.inventory.items().filter(i => i && SWORD_NAMES.has(i.name))
+  if (!items.length) return null
+  items.sort((a, b) => SWORD_RANK.indexOf(a.name) - SWORD_RANK.indexOf(b.name))
+  return items[0]
+}
+
+function ensureSword () {
+  const held = bot.heldItem
+  if (held && SWORD_NAMES.has(held.name)) return
+  const sword = bestSword()
+  if (sword) {
+    bot.equip(sword, 'hand').catch(err => log('装备剑失败:', err.message))
+  } else {
+    log('警告: 物品栏中没有剑类武器，将空手攻击')
+  }
+}
+
+/** 物品栏（主物品栏 9-35 + 快捷栏 36-44）是否已满 */
+function inventoryFull () {
+  const slots = bot.inventory.slots // 数组属性
+  for (let i = 9; i < 45; i++) {
+    if (!slots[i]) return false
+  }
+  return true
+}
+
+function containerHasSpace (win) {
+  return win.slots.slice(0, win.inventoryStart).some(s => !s)
+}
+
+/** 下一个要存入容器的物品（只取容器窗口中的玩家区：主物品栏+快捷栏，不含盔甲/副手；跳过剑与熟猪肉） */
+function nextDepositItem (win) {
+  const slots = win.slots // 数组属性，槽位即容器窗口槽位
+  for (let i = win.inventoryStart; i < win.inventoryEnd; i++) {
+    const it = slots[i]
+    if (!it) continue
+    if (SWORD_NAMES.has(it.name)) continue   // 保留剑类武器
+    if (it.name === PORKCHOP) continue       // 保留熟猪肉
+    return it
+  }
+  return null
+}
+
+function pruneRecentDeaths () {
+  while (recentDeaths.length && Date.now() - recentDeaths[0].time > DROP_WINDOW_MS) recentDeaths.shift()
+}
+
+/** 暂停/唤醒：暂停时停止寻路并挂起主循环，等待网页唤醒 */
+function setPaused (p) {
+  paused = !!p
+  if (paused) {
+    if (bot) {
+      bot.pathfinder.setGoal(null)
+      // 关闭可能残留的容器窗口，避免唤醒后状态混乱
+      if (bot.currentWindow && bot.currentWindow.id !== 0) {
+        try { bot.closeWindow(bot.currentWindow) } catch {}
+      }
+    }
+    log('已暂停，等待网页唤醒')
+  } else {
+    log('已唤醒，开始工作')
+    // 若暂停发生在存仓/进食等子流程中，恢复为狩猎状态
+    if (!botDead && state !== 'hunt') state = 'hunt'
+    if (!mainLoopActive && !botDead && state === 'hunt' && running) {
+      mainLoopActive = true
+      mainLoop().catch(err => log('主循环异常退出:', err && err.stack || err))
+    }
+  }
+  webBroadcast({ type: 'paused', paused })
+}
+
+/** 网页状态快照 */
+function getStatus () {
+  if (!bot || !bot.entity) return null
+  const pos = bot.entity.position
+  const slots = bot.inventory.slots
+  let used = 0
+  let porkchop = 0
+  for (let i = 9; i < 45; i++) {
+    if (slots[i]) used++
+  }
+  for (const it of bot.inventory.items()) {
+    if (it && it.name === PORKCHOP) porkchop += it.count
+  }
+  const target = findTargetInRange(TARGET_RADIUS)
+  const players = Object.values(bot.entities)
+    .filter(e => e.type === 'player' && e.id !== bot.entity.id && e.username)
+    .map(e => e.username)
+  return {
+    t: Date.now(),
+    pos: { x: pos.x, y: pos.y, z: pos.z, yaw: bot.entity.yaw, pitch: bot.entity.pitch },
+    health: bot.health,
+    food: bot.food,
+    saturation: bot.foodSaturation,
+    state,
+    paused,
+    dimension: bot.game && bot.game.dimension ? bot.game.dimension : null,
+    target: target ? { name: target.name, dist: bot.entity.position.distanceTo(target.position) } : null,
+    inventory: { used, full: inventoryFull(), sword: bot.heldItem ? bot.heldItem.name : null, porkchop },
+    players,
+    entities: Object.keys(bot.entities).length,
+    drops: dropIds.size,
+    uptime: Math.floor(process.uptime())
+  }
+}
+
+// ---------------- 事件 ----------------
+function registerEvents () {
+  bot.once('spawn', async () => {
+    botDead = false
+    log(`已进入服务器（版本 ${bot.version}），1.5 秒后登录`)
+    await sleep(1500)
+    bot.chat(`/login ${PSW}`)
+    log('已发送 /login')
+    await sleep(1000)
+    // 用 /warp 菜单传送到工作点：等待箱子界面打开 → 拿起第一行第二个物品 → 等 3.5s 传送生效
+    // 传送失败则保持待机重试，绝不直接开始工作
+    if (!(await warpToWork())) {
+      log('warp 传送失败（多次重试未成功），保持待机，不开始工作')
+      return
+    }
+    running = true
+    state = 'hunt'
+    if (paused) {
+      log('待机模式（未带 --auto-start）：等待网页唤醒')
+    } else {
+      log('开始主流程')
+      mainLoopActive = true
+      mainLoop().catch(err => log('主循环异常退出:', err && err.stack || err))
+    }
+  })
+
+  // 新生成的物品实体：若在某个目标死亡 3 秒内、且距死亡位置 < 2 格 → 判定为掉落物
+  bot.on('entitySpawn', e => {
+    if (e.name !== 'item' || !e.position) return
+    const now = Date.now()
+    for (const d of recentDeaths) {
+      if (now - d.time <= DROP_WINDOW_MS && d.pos.distanceTo(e.position) < DROP_RADIUS) {
+        dropIds.add(e.id)
+        break
+      }
+    }
+  })
+
+  bot.on('entityDead', e => {
+    deadIds.add(e.id)
+    dropIds.delete(e.id)
+    if (isTargetEntity(e)) {
+      recentDeaths.push({ pos: e.position.clone(), time: Date.now() })
+      pruneRecentDeaths()
+      log(`目标死亡: ${e.name} @ ${e.position.floored ? e.position.floored() : e.position}，拾取掉落物`)
+    }
+  })
+
+  bot.on('entityGone', e => {
+    deadIds.delete(e.id)
+    dropIds.delete(e.id)
+  })
+
+  bot.on('death', () => {
+    log('假人死亡')
+    // 调试：记录死亡位置与附近实体/方块，便于定位死因
+    if (bot.entity) {
+      const p = bot.entity.position
+      const near = Object.values(bot.entities)
+        .filter(e => e.position && e.position.distanceTo(p) < 12)
+        .map(e => e.name)
+      const block = bot.blockAt(p)
+      log(`死亡位置 ${p.floored()}，站立方块: ${block ? block.name : '?'}，附近实体: ${[...new Set(near)].slice(0, 15).join(',') || '无'}`)
+    }
+    botDead = true
+    state = 'dead'
+    bot.pathfinder.setGoal(null)
+    // mineflayer 默认自动重生（options.respawn = true）
+  })
+
+  bot.on('respawn', async () => {
+    // 本服传送插件（warp/back 的“3 秒后传送”）会在传送时发送 respawn 数据包（伪重生），
+    // 此时并未真正死亡（未触发 death 事件，botDead 仍为 false）。
+    // 若在这里盲目 /back 会再次触发传送→伪重生→/back 死循环，因此只有真死后才 /back。
+    if (!botDead) {
+      log('收到重生数据包但未死亡（疑似 warp 传送触发），忽略，不执行 /back')
+      return
+    }
+    botDead = false
+    log('已重生，输入 /back')
+    await sleep(1000)
+    bot.chat('/back')
+    await sleep(DEPOSIT_WAIT_MS)
+    state = 'hunt'
+    log('返回原位置，继续执行')
+  })
+
+  bot.on('path_update', r => {
+    if (r.status === 'noPath') {
+      noPathCount++
+      if (noPathCount > 5) noPathFlag = true
+    } else if (r.status === 'success' || r.status === 'partial') {
+      noPathCount = 0
+      noPathFlag = false
+    }
+  })
+
+  bot.on('kicked', reason => {
+    log('被踢出服务器:', typeof reason === 'string' ? reason : JSON.stringify(reason))
+    if (!intentionalQuit) scheduleReconnect()
+  })
+  bot.on('error', err => log('连接错误:', err.message))
+  bot.on('end', reason => {
+    log('连接断开:', reason)
+    if (!intentionalQuit) scheduleReconnect()
+  })
+
+  // ---- 网页监控：聊天 - 查看其他玩家聊天 + 系统消息 ----
+  bot.on('chat', (username, message) => {
+    const c = { username, message, t: Date.now() }
+    chatBuffer.push(c)
+    if (chatBuffer.length > 100) chatBuffer.shift()
+    webBroadcast({ type: 'chat', username, message })
+  })
+  bot.on('messagestr', (text) => {
+    if (/^<[^>]+>/.test(text)) return // 玩家聊天已由 chat 事件处理，避免重复
+    log('[系统]', text) // 系统消息也写入日志，便于排查（如死亡提示）
+    webBroadcast({ type: 'sys', text })
+  })
+}
+
+// ---------------- 主循环 ----------------
+async function mainLoop () {
+  try {
+    while (running && !paused) {
+      try {
+        if (intentionalQuit) return
+        if (botDead || state !== 'hunt') { await sleep(500); continue }
+
+      // 1) 进食（最高优先级）
+      if (await tryEat()) continue
+
+      // 2) 物品栏已满 → 仓库流程
+      if (inventoryFull()) {
+        log('物品栏已满，进入仓库流程')
+        await depositFlow()
+        continue
+      }
+
+      // 3) 寻找目标（mooshroom 优先，其次 cow，取最近）
+      const target = findTarget()
+      if (!target) { await sleep(1000); continue }
+
+      log(`找到目标: ${target.name} @ ${target.position.floored ? target.position.floored() : target.position}，距离 ${bot.entity.position.distanceTo(target.position).toFixed(1)} 格`)
+      await attackUntilDead(target)
+
+      // 4) 拾取掉落物（物品栏已满则跳过，直接去存仓）
+      if (inventoryFull()) {
+        log('物品栏已满，跳过拾取')
+      } else {
+        await collectDrops()
+      }
+      } catch (err) {
+        log('主循环异常:', err && err.stack || err)
+        await sleep(1000)
+      }
+    }
+  } finally {
+    mainLoopActive = false
+  }
+}
+
+// ---------------- 攻击 ----------------
+async function attackUntilDead (target) {
+  ensureSword()
+  noPathCount = 0
+  noPathFlag = false
+  const targetId = target.id
+  let lastAttack = 0
+  bot.pathfinder.setGoal(new GoalFollow(target, STANDOFF), true)
+
+  while (running && !paused && state === 'hunt') {
+    if (intentionalQuit || botDead || paused) return
+
+    const cur = bot.entities[targetId]
+    if (!cur || deadIds.has(targetId)) return                       // 目标死亡或消失
+    if (bot.entity.position.distanceTo(cur.position) > TARGET_RADIUS + 10) return // 追太远，放弃
+    if (noPathFlag) { log('无法寻路到目标，放弃该目标'); return }
+
+    // 攻击间隙进食
+    if (await tryEat()) {
+      const again = bot.entities[targetId]
+      if (again) bot.pathfinder.setGoal(new GoalFollow(again, STANDOFF), true)
+      continue
+    }
+
+    const d = bot.entity.position.distanceTo(cur.position)
+    if (d <= ATTACK_RANGE && Date.now() - lastAttack >= ATTACK_INTERVAL) {
+      bot.lookAt(cur.position.offset(0, cur.height / 2, 0)).catch(() => {})
+      bot.attack(cur)
+      lastAttack = Date.now()
+    }
+    await sleep(250)
+  }
+  bot.pathfinder.setGoal(null)
+}
+
+// ---------------- 拾取掉落物 ----------------
+async function collectDrops () {
+  // 死亡瞬间扫描：目标死亡位置 2 格内的物品实体都判定为掉落物（兼容事件到达顺序）
+  pruneRecentDeaths()
+  for (const e of Object.values(bot.entities)) {
+    if (e.name !== 'item' || !e.position) continue
+    for (const d of recentDeaths) {
+      if (d.pos.distanceTo(e.position) < DROP_RADIUS) { dropIds.add(e.id); break }
+    }
+  }
+
+  const giveUpAt = Date.now() + DROP_WINDOW_MS * 3 // 单个目标最多拾取 9 秒
+  while (running && !paused && state === 'hunt' && Date.now() < giveUpAt) {
+    if (botDead || intentionalQuit || paused) return
+    if (inventoryFull()) return // 满了就停，交给存仓流程
+
+    const items = [...dropIds].map(id => bot.entities[id]).filter(e => e && e.name === 'item' && e.position)
+    if (!items.length) break
+    items.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
+    const it = items[0]
+    log(`拾取掉落物 @ ${it.position.floored ? it.position.floored() : it.position}`)
+    bot.pathfinder.setGoal(new GoalNear(it.position.x, it.position.y, it.position.z, 1), false)
+
+    const start = Date.now()
+    while (Date.now() - start < 3000) {
+      if (!bot.entities[it.id]) break // 已被拾取
+      await sleep(200)
+    }
+  }
+  bot.pathfinder.setGoal(null)
+  for (const id of [...dropIds]) if (!bot.entities[id]) dropIds.delete(id)
+}
+
+// ---------------- 进食 ----------------
+async function tryEat () {
+  if (Date.now() - lastEatTime < EAT_COOLDOWN_MS) return false
+  const needEat = (bot.health < 12 && bot.foodSaturation <= 19) || bot.food < 16
+  if (!needEat) return false
+
+  const prevState = state
+  state = 'eat'
+
+  const off = bot.inventory.slots[45]
+  let pork = bot.inventory.items().find(i => i && i.name === PORKCHOP)
+  if (!pork && off && off.name === PORKCHOP) pork = off
+
+  if (!pork) {
+    log('所有熟猪肉已耗尽，下线')
+    intentionalQuit = true
+    bot.quit('熟猪肉耗尽')
+    return true
+  }
+
+  // 仅当副手没有熟猪肉时才手动放入副手
+  if (!off || off.name !== PORKCHOP) {
+    await putInOffhand(pork)
+  }
+
+  // 停止移动，开始食用
+  bot.pathfinder.setGoal(null)
+  const offNow = bot.inventory.slots[45]
+  const beforeCount = offNow ? offNow.count : 0
+  bot.activateItem(true)
+  log(`开始食用熟猪肉（副手 ${beforeCount} 个）`)
+  const start = Date.now()
+  while (Date.now() - start < 8000) {
+    if (botDead) break
+    const s = bot.inventory.slots[45]
+    const c = s ? s.count : 0
+    if (c < beforeCount) break // 数量减少 = 食用动作完成
+    await sleep(250)
+  }
+  try { bot.deactivateItem() } catch {}
+  lastEatTime = Date.now()
+  log('食用完成')
+  if (!botDead) state = prevState
+  return true
+}
+
+/** 手动把熟猪肉放到副手（玩家窗口槽位：主物品栏 9-35、快捷栏 36-44、副手 45） */
+async function putInOffhand (pork) {
+  // 进食只在狩猎阶段发生，正常无容器窗口；若意外有则先关掉，避免点错槽位
+  if (bot.currentWindow && bot.currentWindow.id !== 0) {
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+    await sleep(200)
+  }
+  const srcSlot = pork.slot // 玩家窗口槽位（物品来自 bot.inventory.items()）
+  const offSlot = 45        // 副手槽
+  const offItem = bot.inventory.slots[offSlot]
+  log(`将熟猪肉放入副手（源槽 ${srcSlot} → 副手槽 ${offSlot}）`)
+  bot.clickWindow(srcSlot, 0, 0)
+  await sleep(200)
+  bot.clickWindow(offSlot, 0, 0)
+  await sleep(200)
+  if (offItem && offItem.name !== PORKCHOP) { // 原副手物品放回源槽
+    bot.clickWindow(srcSlot, 0, 0)
+    await sleep(200)
+  }
+}
+
+// ---------------- 仓库流程 ----------------
+async function depositFlow () {
+  state = 'deposit'
+  bot.pathfinder.setGoal(null)
+
+  // 阶段1: /home cangku，等待 3.5 秒（不移动、原地攻击附近目标、不拾取掉落物），坐标未变则重试
+  let moved = false
+  for (let attempt = 0; attempt < 30 && !moved; attempt++) {
+    if (botDead || intentionalQuit || paused) return
+    const before = bot.entity.position.clone()
+    bot.chat('/home cangku')
+    log(`输入 /home cangku（第 ${attempt + 1} 次）`)
+    await waitDefensive(DEPOSIT_WAIT_MS)
+    if (state !== 'deposit') return // 期间死亡等中断
+    if (before.distanceTo(bot.entity.position) > 1) { moved = true; break }
+    log('坐标未改变，重试 /home cangku')
+  }
+  if (!moved) { log('多次输入 /home cangku 均未传送，稍后重试'); state = 'hunt'; return }
+
+  // 阶段2: 寻找 barrel 并打开
+  let win = await openBarrel()
+  if (!win || state !== 'deposit') { log('未找到 barrel 或流程中断'); state = 'hunt'; return }
+
+  // 阶段3: 将背包中除盔甲/剑/熟猪肉外的所有物品移入容器，限速 4 次/秒
+  dropIds.clear() // 存仓期间不拾取掉落物
+  let fullSince = null
+  let lastOp = 0
+  while (state === 'deposit') {
+    if (botDead || intentionalQuit || paused) return
+    const item = nextDepositItem(win)
+    if (!item) break
+
+    // 窗口被关闭则重新打开
+    let w = bot.currentWindow
+    if (!w || w.id !== win.id) {
+      log('容器窗口已关闭，重新打开')
+      const w2 = await openBarrel()
+      if (!w2) return
+      win = w2
+      w = win
+      fullSince = null
+    }
+
+    // 容器已满：每秒查看一次空位，10 秒后仍无空位则待机，每 10 秒检查一次
+    if (!containerHasSpace(w)) {
+      if (fullSince === null) { fullSince = Date.now(); log('容器已满，等待空位') }
+      if (Date.now() - fullSince > 10000) {
+        log('容器已满超过 10 秒，待机（每 10 秒检查一次）')
+        await sleep(10000)
+      } else {
+        await sleep(1000)
+      }
+      continue
+    }
+    fullSince = null
+
+    // 限速：一秒最多 4 次操作
+    const gap = CONTAINER_OP_INTERVAL - (Date.now() - lastOp)
+    if (gap > 0) await sleep(gap)
+    try {
+      bot.clickWindow(item.slot, 0, 1) // item.slot 即容器窗口槽位；shift-click 整组移入容器
+      lastOp = Date.now()
+      log(`移入容器: ${item.name} x${item.count}`)
+    } catch (err) {
+      log('移动物品失败:', err.message)
+    }
+    await sleep(150) // 等待服务器处理该次点击
+  }
+
+  log('所有物品已放入容器')
+  try { bot.closeWindow(bot.currentWindow) } catch {}
+  await sleep(300)
+
+  // 阶段4: /back
+  bot.chat('/back')
+  log('已输入 /back')
+  await sleep(DEPOSIT_WAIT_MS)
+  state = 'hunt'
+  log('返回工作点，继续流程')
+}
+
+function waitForWindowOpen (timeout) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { bot.removeListener('windowOpen', onEv); resolve(null) }, timeout)
+    function onEv (w) { clearTimeout(timer); resolve(w) }
+    bot.once('windowOpen', onEv)
+  })
+}
+
+/**
+ * 通过 /warp 菜单传送到工作点：
+ * 1) 发送 /warp（服务器弹出箱子菜单）
+ * 2) 等待箱子界面打开
+ * 3) 拿起第一行第二个物品（槽位 1，左键点击触发传送）
+ * 4) 等 DEPOSIT_WAIT_MS(3.5s) 传送生效，坐标变化即成功；失败则重试直到成功
+ */
+async function warpToWork () {
+  for (let attempt = 1; ; attempt++) {
+    if (botDead || intentionalQuit) return false
+    const before = bot.entity.position.clone()
+    bot.chat('/warp')
+    log(`已发送 /warp（第 ${attempt} 次）`)
+
+    // 等待箱子界面（warp 菜单）打开
+    const win = await waitForWindowOpen(6000)
+    if (!win || win.id === 0) {
+      log('warp 菜单未打开，2 秒后重试')
+      await sleep(2000)
+      continue
+    }
+    const slotItem = win.slots[1]
+    log(`warp 菜单已打开（${win.title || '未知标题'}），拿起第一行第二个物品${slotItem ? '：' + slotItem.name : ''}`)
+    try {
+      bot.clickWindow(1, 0, 0) // 左键拿起第一行第二个物品，触发传送
+      await sleep(600)
+    } catch (err) {
+      log('点击 warp 菜单失败:', err.message)
+    }
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+
+    // 拿起后等 3.5s 传送生效，再验证坐标变化（传送插件会先提示“3 秒后被传送”）
+    await sleep(DEPOSIT_WAIT_MS)
+    let moved = bot.entity.position.distanceTo(before) > 1
+    if (!moved) {
+      await sleep(2000) // 传送偶尔略慢，再等 2 秒
+      moved = bot.entity.position.distanceTo(before) > 1
+    }
+    if (moved) {
+      log('warp 传送成功')
+      return true
+    }
+    log('warp 传送未生效，2 秒后重试')
+    await sleep(2000)
+  }
+}
+
+async function openBarrel () {
+  for (let i = 0; i < 15; i++) {
+    if (state !== 'deposit' || botDead) return null
+    // 关闭可能残留的窗口，避免重复打开被服务器拒绝
+    if (bot.currentWindow) {
+      try { bot.closeWindow(bot.currentWindow) } catch {}
+      await sleep(200)
+    }
+    const barrel = bot.findBlock({ matching: b => b.name === 'barrel', maxDistance: 10 })
+    if (barrel) {
+      try {
+        bot.lookAt(barrel.position.offset(0.5, 0.5, 0.5)).catch(() => {})
+        await sleep(200)
+        bot.activateBlock(barrel)
+        const w = await waitForWindowOpen(3000) // 等待容器界面打开，3 秒超时
+        if (w) { log('已打开 barrel 窗口'); return w }
+        log('打开 barrel 窗口超时，重试')
+      } catch (err) {
+        log('打开 barrel 失败:', err.message)
+      }
+    } else {
+      log('10 格内未找到 barrel')
+    }
+    await sleep(1000)
+  }
+  return null
+}
+
+/** 等待阶段：不移动、不拾取掉落物；附近有目标则原地切剑攻击 */
+async function waitDefensive (ms) {
+  ensureSword()
+  let lastAttack = 0
+  const end = Date.now() + ms
+  while (Date.now() < end && running && !paused) {
+    if (state !== 'deposit' || botDead) return
+    if (Date.now() - lastAttack >= 1000) {
+      const t = findTargetInRange(ATTACK_RANGE + 0.3)
+      if (t) {
+        bot.lookAt(t.position.offset(0, t.height / 2, 0)).catch(() => {})
+        bot.attack(t)
+        lastAttack = Date.now()
+      }
+    }
+    await sleep(200)
+  }
+}
+
+// ---------------- 重连 ----------------
+let reconnectTimer = null
+function scheduleReconnect () {
+  if (reconnectTimer || intentionalQuit) return
+  log('5 秒后重新连接...')
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    if (intentionalQuit) return
+    running = false
+    createBot()
+  }, 5000)
+}
+
+// ---------------- 底层兼容补丁 ----------------
+// 1) mineflayer 4.30+ 的 bot.chat 内部调用 bot._client.chat(message)，
+//    而该方法是 minecraft-protocol 在登录（onReady）后才赋值的；
+//    若连接卡在登录前或上游版本不赋值，就会抛 "bot._client.chat is not a function"。
+//    这里在创建客户端后立即补一个用原生数据包实现的兜底（登录后会被真正的实现覆盖）。
+function ensureClientChat (client) {
+  if (!client || typeof client.chat === 'function') return
+  client.chat = (message) => {
+    const ts = BigInt(Date.now())
+    if (typeof message === 'number') message = message.toString()
+    if (message.startsWith('/')) {
+      client.write('chat_command', {
+        command: message.slice(1),
+        timestamp: ts,
+        salt: 1n,
+        argumentSignatures: [],
+        messageCount: 0,
+        checksum: Buffer.alloc(8),
+        acknowledged: Buffer.alloc(3)
+      })
+    } else {
+      client.write('chat_message', {
+        message,
+        timestamp: ts,
+        salt: 1n,
+        signature: undefined,
+        offset: 0,
+        checksum: Buffer.alloc(8),
+        acknowledged: Buffer.alloc(3)
+      })
+    }
+  }
+}
+
+// 2) 服务器在配置阶段下发 add_resource_pack（强制资源包）时会等客户端回包后才发
+//    finish_configuration，不回包就永远进不了游戏（表现为登录失败/超时断线）。
+//    mineflayer 自带的 acceptResourcePack 有上游 bug（PR #3842 未合并）：把 uuid-1345
+//    对象直接写回，protodef 会序列化成 16 个 0 字节，服务器匹配不上 UUID 从而忽略响应。
+//    这里直接用字符串 UUID 回包（ACCEPTED=3，SUCCESSFULLY_LOADED=0）。
+function autoAcceptResourcePack (client) {
+  if (!client || typeof client.on !== 'function') return
+  const reply = (uuid, result) => {
+    try { client.write('resource_pack_receive', { uuid, result }) } catch {}
+  }
+  const accept = (data) => {
+    const uuid = typeof data.uuid === 'string' ? data.uuid : String(data.uuid)
+    log('收到服务器资源包，自动接受')
+    reply(uuid, 3) // ACCEPTED
+    reply(uuid, 0) // SUCCESSFULLY_LOADED
+  }
+  client.on('add_resource_pack', accept)
+  client.on('resource_pack_send', accept)
+}
+
+// ---------------- 创建 bot ----------------
+function createBot () {
+  bot = mineflayer.createBot({ host: HOST, port: PORT, username: BOT_USERNAME, version: VERSION, auth: AUTH })
+  ensureClientChat(bot._client)
+  autoAcceptResourcePack(bot._client)
+  bot.loadPlugin(pathfinder)
+  // mineflayer 4.20+ 的 loadPlugin 只排队插件，连接成功（inject_allowed）后才注入，
+  // 因此 bot.pathfinder 此时尚不存在，需等注入后再设置寻路参数
+  bot.once('inject_allowed', () => {
+    bot.pathfinder.setMovements(new CustomMovements(bot))
+  })
+  registerEvents()
+  // 网页 3D 视图绑定（重连时重建）：attachBot 是 viewerServer 模块级函数，
+  // 会关闭旧视图服务器并在同端口用新 bot 重建
+  if (viewerServer) viewerCtl = viewerServer.attachBot(bot, VIEWER_PORT)
+  return bot
+}
+
+createBot()
+
+// ---------------- 网页监控 ----------------
+function startWeb () {
+  try {
+    const monitor = require('./web/monitor')
+    webApi = monitor.startMonitor({
+      getBot: () => bot,
+      getStatus,
+      getLogs: () => logBuffer,
+      getChats: () => chatBuffer,
+      setPaused,
+      getPaused: () => paused,
+      getConfig: () => ({ username: BOT_USERNAME, version: VERSION, webPort: WEB_PORT, viewerPort: VIEWER_PORT, autoStart: AUTO_START }),
+      getViewerControl: () => viewerCtl
+    })
+  } catch (err) {
+    console.error('[web] 监控启动失败:', err.message)
+  }
+  try {
+    viewerServer = require('./web/viewerServer')
+    viewerCtl = viewerServer.attachBot(bot, VIEWER_PORT)
+  } catch (err) {
+    console.error('[web] 3D 视图启动失败:', err.message)
+  }
+}
+startWeb()
+
+// ---------------- 进程兜底 ----------------
+process.on('uncaughtException', err => log('未捕获异常:', err && err.stack || err))
+process.on('unhandledRejection', err => log('未处理的 Promise 拒绝:', err && err.stack || err))
+process.on('SIGINT', () => {
+  intentionalQuit = true
+  if (bot) bot.quit('手动退出')
+  setTimeout(() => process.exit(0), 500)
+})

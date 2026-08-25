@@ -1,0 +1,60 @@
+# 依赖目录
+node_modules/
+jspm_packages/
+
+# 日志文件
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 构建输出
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 缓存目录
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+
+# 临时文件
+*.tmp
+*.temp
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE 配置（可根据个人喜好保留或删除）
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 打包文件（如果直接打包项目则忽略）
+*.tgz
+*.tar.gz
+
+# 其他可能生成的敏感或临时文件
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
