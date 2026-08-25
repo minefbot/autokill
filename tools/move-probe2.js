@@ -24,6 +24,7 @@ const bot = mineflayer.createBot({ host: HOST, port: PORT, username: BOT_USERNAM
 
 let forcedMoveCount = 0
 bot.on('forcedMove', (pos) => {
+  if (!pos) return
   forcedMoveCount++
   log(`[事件] forcedMove(服务器拉回/传送) #${forcedMoveCount}: ${pos.floored()}`)
 })
