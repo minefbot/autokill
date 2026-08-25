@@ -67,7 +67,7 @@ const STUCK_LIMIT = 3             // 连续 N 秒未移动视为卡住
 const STATUS_LOG_MS = 30000       // 周期状态日志间隔
 const DEPOSIT_WAIT_MS = 3500      // /home cangku 与 /back 后的等待时长
 const EAT_COOLDOWN_MS = 5000      // 食用后 5 秒内不再食用
-const CONTAINER_OP_INTERVAL = 250 // 容器操作限速：一秒最多 4 次
+const CONTAINER_OP_INTERVAL = 300 // 容器操作限速：两次操作间隔 ≥300ms（一秒最多 4 次，留抖动余量）
 const SWORD_NAMES = new Set(['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword'])
 const SWORD_RANK = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword']
 const TARGET_NAMES = new Set(['cow', 'mooshroom', 'mooshroom_cow'])
@@ -750,7 +750,7 @@ async function depositFlow () {
     }
     fullSince = null
 
-    // 限速：一秒最多 4 次操作
+    // 限速：两次操作间隔 ≥300ms（一秒最多 4 次）
     const gap = CONTAINER_OP_INTERVAL - (Date.now() - lastOp)
     if (gap > 0) await sleep(gap)
     try {
