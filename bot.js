@@ -5,6 +5,10 @@
  *  1. 进服 1.5s 后 /login <PSW>，1s 后 /home work，开始主循环
  *  2. 寻找 50 格内的 mooshroom/cow（mooshroom 优先、取最近），寻路保持 ≥2 格距离，
  *     切剑攻击直到目标死亡；拾取死亡 3 秒内、距死亡位置 2 格内的掉落物
+ *  2a. 移动修复：寻路开始前先面向目标，寻路中每 150ms 面向下一路径节点（移动方向），
+ *     并带卡住检测日志（部分服务器要求玩家面向移动方向才允许移动）
+ *  2b. 击杀归属：只拾取假人自己参与击杀（最后攻击该目标 4 秒内死亡）的掉落物，
+ *     其他玩家打死的牛/蘑菇牛掉落物不捡
  *  3. 避让其他玩家（靠近玩家的方向寻路权重降低，但非完全不可通行）
  *  4. 物品栏满 → 先寻路到“周围 5 格内无目标”的安全位置，再 /home cangku →
  *     以系统聊天出现“传送完成”判定传送成功（部分匹配，未收到则重试；期间不移动、
@@ -56,6 +60,11 @@ const ATTACK_RANGE = 3.2          // 剑的攻击距离
 const ATTACK_INTERVAL = 900       // 两次攻击的最小间隔 ms
 const DROP_WINDOW_MS = 3000       // 掉落物判定：目标死亡后 3 秒内
 const DROP_RADIUS = 2             // 掉落物判定：距死亡位置 < 2 格
+const KILL_CLAIM_MS = 4000        // 击杀归属：最后攻击该目标 4 秒内死亡 → 视为假人击杀
+const FACING_TICK_MS = 150        // 寻路中面向移动方向的刷新间隔
+const STUCK_CHECK_MS = 1000       // 卡住检测间隔（秒级采样）
+const STUCK_LIMIT = 3             // 连续 N 秒未移动视为卡住
+const STATUS_LOG_MS = 30000       // 周期状态日志间隔
 const DEPOSIT_WAIT_MS = 3500      // /home cangku 与 /back 后的等待时长
 const EAT_COOLDOWN_MS = 5000      // 食用后 5 秒内不再食用
 const CONTAINER_OP_INTERVAL = 250 // 容器操作限速：一秒最多 4 次
@@ -80,6 +89,14 @@ const dropIds = new Set()   // 已确认掉落物的实体 id
 const deadIds = new Set()   // 已死亡/消失的实体 id
 let avoidPlayers = []       // 需要避让的玩家坐标（定期更新）
 let teleportAck = false     // 是否收到系统“传送完成”提示（传送完成判定依据）
+const myKills = new Map()   // 假人攻击过的目标: entityId → 最近攻击时间（击杀归属判定）
+let currentPath = []        // pathfinder 最近一次计算的路径节点（用于面向移动方向）
+let lastPathStatus = null   // 最近一次路径计算状态
+let lastGoalDesc = ''       // 当前寻路目标描述（日志用）
+let lastMoveCheckPos = null // 卡住检测：上次采样位置
+let lastMoveCheckTime = 0   // 卡住检测：上次采样时间
+let stuckCount = 0          // 连续未移动的秒数
+let stuckLogged = false     // 本次卡住是否已记录日志
 
 // 网页监控：日志/聊天缓冲
 const logBuffer = []
@@ -98,6 +115,92 @@ function log (...a) {
 }
 
 function webBroadcast (msg) { if (webApi) webApi.broadcast(msg) }
+
+// ---------------- 状态切换与面向移动方向 ----------------
+/** 切换工作状态并记录日志 */
+function setState (s, reason) {
+  if (state === s) return
+  log(`[状态] ${state} → ${s}${reason ? `（${reason}）` : ''}`)
+  state = s
+}
+
+/** 面向某位置（移动方向）：force=true 立即生效，随下一个移动包发出 */
+function facePosition (pos) {
+  if (!bot || !bot.entity || !pos) return
+  if (typeof bot.look !== 'function') return
+  const dx = pos.x - bot.entity.position.x
+  const dz = pos.z - bot.entity.position.z
+  if (dx === 0 && dz === 0) return
+  bot.look(Math.atan2(-dx, -dz), 0, true).catch(() => {})
+}
+
+/** 面向当前路径的下一节点（移动方向） */
+function faceNextNode () {
+  const n = currentPath[0]
+  if (!n) return false
+  facePosition({ x: n.x + 0.5, y: bot.entity.position.y, z: n.z + 0.5 })
+  return true
+}
+
+/** 开始寻路：先面向目标/移动方向，再交给 pathfinder */
+function startPath (goal, dynamic, desc) {
+  if (goal && goal.entity && goal.entity.position) facePosition(goal.entity.position)
+  else if (goal && typeof goal.x === 'number') facePosition({ x: goal.x, y: goal.y, z: goal.z })
+  lastGoalDesc = desc || ''
+  log(`[移动] 开始寻路${desc ? '：' + desc : ''}，先面向目标方向`)
+  bot.pathfinder.setGoal(goal, dynamic)
+}
+
+/** 物品实体名称（item 实体的物品信息在 metadata[8]，拿不到返回 null） */
+function itemEntityName (e) {
+  try {
+    const m = e && e.metadata && e.metadata[8]
+    if (m && typeof m === 'object') {
+      if (m.name) return m.name
+      if (m.displayName) return m.displayName
+    }
+  } catch {}
+  return null
+}
+
+// 寻路过程中每 150ms 面向移动方向（下一路径节点），并检测卡住
+setInterval(() => {
+  if (!bot || !bot.entity || paused || botDead) return
+  if (!bot.pathfinder || typeof bot.pathfinder.isMoving !== 'function' || !bot.pathfinder.isMoving()) {
+    stuckCount = 0
+    stuckLogged = false
+    return
+  }
+  faceNextNode()
+
+  const now = Date.now()
+  const p = bot.entity.position
+  if (!lastMoveCheckPos || now - lastMoveCheckTime >= STUCK_CHECK_MS) {
+    const moved = lastMoveCheckPos ? p.distanceTo(lastMoveCheckPos) : 1
+    lastMoveCheckPos = p.clone()
+    lastMoveCheckTime = now
+    if (moved < 0.05) {
+      stuckCount++
+      if (stuckCount >= STUCK_LIMIT && !stuckLogged) {
+        stuckLogged = true
+        const n = currentPath[0]
+        log(`[路径] 疑似卡住：${STUCK_LIMIT} 秒内位置几乎未动（当前 ${p.floored()}，下一节点 ${n ? n.x + ',' + n.y + ',' + n.z : '无'}）${lastGoalDesc ? '，目标: ' + lastGoalDesc : ''}`)
+      }
+    } else {
+      stuckCount = 0
+      stuckLogged = false
+    }
+  }
+}, FACING_TICK_MS)
+
+// 周期状态日志（每 30 秒）
+setInterval(() => {
+  if (!bot || !bot.entity || !running) return
+  const pos = bot.entity.position
+  const target = findTargetInRange(TARGET_RADIUS)
+  const moving = bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' ? bot.pathfinder.isMoving() : false
+  log(`[状态] 坐标=${pos.floored()} 生命=${bot.health} 饱食=${bot.food} 状态=${state}${paused ? '（待机）' : ''} 目标=${target ? target.name + '@' + bot.entity.position.distanceTo(target.position).toFixed(1) + '格' : '无'} 移动中=${moving} 待拾取掉落=${dropIds.size} 实体数=${Object.keys(bot.entities).length}`)
+}, STATUS_LOG_MS)
 
 // ---------------- 寻路（靠近玩家的方向权重降低） ----------------
 class CustomMovements extends Movements {
@@ -208,7 +311,7 @@ function setPaused (p) {
   } else {
     log('已唤醒，开始工作')
     // 若暂停发生在存仓/进食等子流程中，恢复为狩猎状态
-    if (!botDead && state !== 'hunt') state = 'hunt'
+    if (!botDead && state !== 'hunt') setState('hunt', '唤醒恢复')
     if (!mainLoopActive && !botDead && state === 'hunt' && running) {
       mainLoopActive = true
       mainLoop().catch(err => log('主循环异常退出:', err && err.stack || err))
@@ -268,7 +371,7 @@ function registerEvents () {
       return
     }
     running = true
-    state = 'hunt'
+    setState('hunt', '登录完成')
     if (paused) {
       log('待机模式（未带 --auto-start）：等待网页唤醒')
     } else {
@@ -285,6 +388,8 @@ function registerEvents () {
     for (const d of recentDeaths) {
       if (now - d.time <= DROP_WINDOW_MS && d.pos.distanceTo(e.position) < DROP_RADIUS) {
         dropIds.add(e.id)
+        const name = itemEntityName(e)
+        log(`[掉落] 检测到新掉落物${name ? ' ' + name : ''} @ ${e.position.floored ? e.position.floored() : e.position}`)
         break
       }
     }
@@ -294,9 +399,19 @@ function registerEvents () {
     deadIds.add(e.id)
     dropIds.delete(e.id)
     if (isTargetEntity(e)) {
-      recentDeaths.push({ pos: e.position.clone(), time: Date.now() })
-      pruneRecentDeaths()
-      log(`目标死亡: ${e.name} @ ${e.position.floored ? e.position.floored() : e.position}，拾取掉落物`)
+      // 击杀归属：仅当假人最后攻击该目标在 4 秒内，才视为假人击杀并拾取掉落物，
+      // 避免抢其他玩家打死的牛/蘑菇牛的掉落物
+      const lastAtk = myKills.get(e.id)
+      const mine = lastAtk !== undefined && Date.now() - lastAtk <= KILL_CLAIM_MS
+      myKills.delete(e.id)
+      const where = e.position.floored ? e.position.floored() : e.position
+      if (mine) {
+        recentDeaths.push({ pos: e.position.clone(), time: Date.now() })
+        pruneRecentDeaths()
+        log(`[击杀] ${e.name} 死亡 @ ${where}，归属：假人（${((Date.now() - lastAtk) / 1000).toFixed(1)}s 前最后攻击），拾取其掉落物`)
+      } else {
+        log(`[击杀] ${e.name} 死亡 @ ${where}，归属：其他玩家/非假人所杀，不拾取掉落物`)
+      }
     }
   })
 
@@ -317,7 +432,7 @@ function registerEvents () {
       log(`死亡位置 ${p.floored()}，站立方块: ${block ? block.name : '?'}，附近实体: ${[...new Set(near)].slice(0, 15).join(',') || '无'}`)
     }
     botDead = true
-    state = 'dead'
+    setState('dead', '假人死亡')
     bot.pathfinder.setGoal(null)
     // mineflayer 默认自动重生（options.respawn = true）
   })
@@ -339,19 +454,29 @@ function registerEvents () {
       if (await waitTeleportDone(DEPOSIT_WAIT_MS + 2000)) break
       log('未收到“传送完成”提示，重试 /back')
     }
-    state = 'hunt'
-    log('返回原位置，继续执行')
+    setState('hunt', '重生返回')
+    log(`返回原位置 ${bot.entity.position.floored ? bot.entity.position.floored() : bot.entity.position}，继续执行`)
   })
 
   bot.on('path_update', r => {
+    currentPath = r.path || []
+    lastPathStatus = r.status
     if (r.status === 'noPath') {
       noPathCount++
       if (noPathCount > 5) noPathFlag = true
-    } else if (r.status === 'success' || r.status === 'partial') {
+      log(`[路径] 无法到达目标（noPath）${lastGoalDesc ? '，目标: ' + lastGoalDesc : ''}（累计 ${noPathCount} 次）`)
+    } else if (r.status === 'success') {
       noPathCount = 0
       noPathFlag = false
+      log(`[路径] 规划完成：${currentPath.length} 个节点，代价 ${(r.cost || 0).toFixed(1)}，耗时 ${r.time}ms`)
+    } else if (r.status === 'partial' || r.status === 'timeout') {
+      noPathCount = 0
+      noPathFlag = false
+      log(`[路径] 计算${r.status === 'timeout' ? '超时' : '部分'}：暂用 ${currentPath.length} 个节点`)
     }
   })
+  bot.on('path_reset', reason => log(`[路径] 路径重置：${reason}${lastGoalDesc ? '（目标: ' + lastGoalDesc + '）' : ''}`))
+  bot.on('goal_reached', () => log(`[路径] 已到达目标${lastGoalDesc ? '：' + lastGoalDesc : ''}`))
 
   bot.on('kicked', reason => {
     log('被踢出服务器:', typeof reason === 'string' ? reason : JSON.stringify(reason))
@@ -426,7 +551,8 @@ async function attackUntilDead (target) {
   noPathFlag = false
   const targetId = target.id
   let lastAttack = 0
-  bot.pathfinder.setGoal(new GoalFollow(target, STANDOFF), true)
+  const where = target.position.floored ? target.position.floored() : target.position
+  startPath(new GoalFollow(target, STANDOFF), true, `攻击 ${target.name}@${where}`)
 
   while (running && !paused && state === 'hunt') {
     if (intentionalQuit || botDead || paused) return
@@ -439,7 +565,7 @@ async function attackUntilDead (target) {
     // 攻击间隙进食
     if (await tryEat()) {
       const again = bot.entities[targetId]
-      if (again) bot.pathfinder.setGoal(new GoalFollow(again, STANDOFF), true)
+      if (again) startPath(new GoalFollow(again, STANDOFF), true, `继续攻击 ${again.name}@${again.position.floored ? again.position.floored() : again.position}`)
       continue
     }
 
@@ -448,6 +574,8 @@ async function attackUntilDead (target) {
       bot.lookAt(cur.position.offset(0, cur.height / 2, 0)).catch(() => {})
       bot.attack(cur)
       lastAttack = Date.now()
+      myKills.set(targetId, lastAttack) // 记录攻击时间，用于击杀归属判定
+      log(`[攻击] ${cur.name} 命中（距离 ${d.toFixed(1)} 格）`)
     }
     await sleep(250)
   }
@@ -474,12 +602,16 @@ async function collectDrops () {
     if (!items.length) break
     items.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
     const it = items[0]
-    log(`拾取掉落物 @ ${it.position.floored ? it.position.floored() : it.position}`)
-    bot.pathfinder.setGoal(new GoalNear(it.position.x, it.position.y, it.position.z, 1), false)
+    const itemName = itemEntityName(it)
+    log(`[掉落] 拾取${itemName ? ' ' + itemName : ''} @ ${it.position.floored ? it.position.floored() : it.position}`)
+    startPath(new GoalNear(it.position.x, it.position.y, it.position.z, 1), false, `拾取掉落物@${it.position.floored ? it.position.floored() : it.position}`)
 
     const start = Date.now()
     while (Date.now() - start < 3000) {
-      if (!bot.entities[it.id]) break // 已被拾取
+      if (!bot.entities[it.id]) { // 已被拾取
+        log(`[掉落] 已拾取${itemName ? ' ' + itemName : ''}，继续下一个`)
+        break
+      }
       await sleep(200)
     }
   }
@@ -494,7 +626,7 @@ async function tryEat () {
   if (!needEat) return false
 
   const prevState = state
-  state = 'eat'
+  setState('eat', '生命/饱食不足')
 
   const off = bot.inventory.slots[45]
   let pork = bot.inventory.items().find(i => i && i.name === PORKCHOP)
@@ -529,7 +661,7 @@ async function tryEat () {
   try { bot.deactivateItem() } catch {}
   lastEatTime = Date.now()
   log('食用完成')
-  if (!botDead) state = prevState
+  if (!botDead) setState(prevState, '进食完成')
   return true
 }
 
@@ -556,7 +688,7 @@ async function putInOffhand (pork) {
 
 // ---------------- 仓库流程 ----------------
 async function depositFlow () {
-  state = 'deposit'
+  setState('deposit', '物品栏已满')
   bot.pathfinder.setGoal(null)
 
   // 阶段1: 先寻路到“周围 5 格都没有目标”的安全位置，再 /home cangku；
@@ -579,11 +711,11 @@ async function depositFlow () {
     if (teleportAck) { teleported = true; break }
     log('未收到“传送完成”提示，重试 /home cangku')
   }
-  if (!teleported) { log('多次输入 /home cangku 均未传送，稍后重试'); state = 'hunt'; return }
+  if (!teleported) { log('多次输入 /home cangku 均未传送，稍后重试'); setState('hunt', '传送失败重试'); return }
 
   // 阶段2: 寻找 barrel 并打开
   let win = await openBarrel()
-  if (!win || state !== 'deposit') { log('未找到 barrel 或流程中断'); state = 'hunt'; return }
+  if (!win || state !== 'deposit') { log('未找到 barrel 或流程中断'); setState('hunt', '存仓中断'); return }
 
   // 阶段3: 将背包中除盔甲/剑/熟猪肉外的所有物品移入容器，限速 4 次/秒
   dropIds.clear() // 存仓期间不拾取掉落物
@@ -643,7 +775,7 @@ async function depositFlow () {
     if (await waitTeleportDone(DEPOSIT_WAIT_MS + 2000)) break
     log('未收到“传送完成”提示，重试 /back')
   }
-  state = 'hunt'
+  setState('hunt', '存仓完成')
   log('返回工作点，继续流程')
 }
 
@@ -738,6 +870,8 @@ async function waitDefensive (ms) {
         bot.lookAt(t.position.offset(0, t.height / 2, 0)).catch(() => {})
         bot.attack(t)
         lastAttack = Date.now()
+        myKills.set(t.id, lastAttack)
+        log(`[攻击] ${t.name} 命中（防御性，等待传送）`)
       }
     }
     await sleep(200)
@@ -803,7 +937,7 @@ async function goToSafeSpot () {
       continue
     }
     log(`寻路到安全位置 ${spot.floored()}（周围 5 格无目标）`)
-    bot.pathfinder.setGoal(new GoalNear(spot.x, spot.y, spot.z, 1), false)
+    startPath(new GoalNear(spot.x, spot.y, spot.z, 1), false, `安全位置@${spot.floored()}`)
     const start = Date.now()
     while (Date.now() - start < 15000) {
       if (botDead || intentionalQuit || paused) return
@@ -888,6 +1022,7 @@ function autoAcceptResourcePack (client) {
 
 // ---------------- 创建 bot ----------------
 function createBot () {
+  log(`[启动] 连接 ${HOST}:${PORT}（用户名 ${BOT_USERNAME}，版本 ${VERSION}，auth ${AUTH}${AUTO_START ? '，自动开始' : '，待机模式'}）`)
   bot = mineflayer.createBot({ host: HOST, port: PORT, username: BOT_USERNAME, version: VERSION, auth: AUTH })
   ensureClientChat(bot._client)
   autoAcceptResourcePack(bot._client)

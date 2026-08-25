@@ -17,6 +17,7 @@ const ioClient = require('socket.io-client')
 // ---------- 事件存储 ----------
 const events = {}
 const mkItem = (name, count, slot) => ({ name, count, slot, type: name.length })
+const lookCalls = [] // 面向移动方向的调用记录
 
 // ---------- 假 bot ----------
 let cursor = null
@@ -54,7 +55,16 @@ const fakeBot = {
   quickBarSlot: 0,
   QUICK_BAR_START: 36,
   pathfinder: {
-    setGoal (goal, dynamic) { goalsLog.push({ goal: goal && goal.constructor && goal.constructor.name, dynamic }) },
+    setGoal (goal, dynamic) {
+      goalsLog.push({
+        goal: goal && goal.constructor && goal.constructor.name,
+        dynamic,
+        x: goal && typeof goal.x === 'number' ? goal.x : undefined,
+        y: goal && typeof goal.y === 'number' ? goal.y : undefined,
+        z: goal && typeof goal.z === 'number' ? goal.z : undefined,
+        entityId: goal && goal.entity ? goal.entity.id : undefined
+      })
+    },
     setMovements () {},
     stop () {},
     isMoving () { return false } // 模拟寻路不可达（安全点寻路立即中断）
@@ -94,6 +104,7 @@ const fakeBot = {
   },
   attack (e) { console.log('  [attack]', e.name, '@', e.position) },
   lookAt () { return Promise.resolve() },
+  look (yaw, pitch, force) { lookCalls.push({ yaw, pitch, force }); return Promise.resolve() },
   equip () { return Promise.resolve() },
   activateItem () {},
   deactivateItem () {},
@@ -196,7 +207,7 @@ setTimeout(() => {
   fakeBot.food = 10
   fakeBot.inventory.slots[15] = mkItem('iron_sword', 1, 15)
   fakeBot.inventory.slots[20] = mkItem('cooked_porkchop', 3, 20)
-  fakeBot.entities[100] = { id: 100, name: 'cow', type: 'mob', position: vec3(5, 64, 0), height: 1.4, width: 0.9 }
+  fakeBot.entities[100] = { id: 100, name: 'cow', type: 'mob', position: vec3(9, 64, 10), height: 1.4, width: 0.9 }
   fakeBot.emit('spawn')
   console.log('  [sim] 出生（待机模式）')
 }, 500)
@@ -209,9 +220,9 @@ setTimeout(() => {
 
 // 模拟牛死亡与掉落物
 setTimeout(() => {
-  console.log('  [sim] 牛死亡')
+  console.log('  [sim] 牛死亡（假人此前已攻击 → 归属假人）')
   fakeBot.emit('entityDead', fakeBot.entities[100])
-  fakeBot.entities[101] = { id: 101, name: 'item', type: 'object', position: vec3(5, 64, 0) }
+  fakeBot.entities[101] = { id: 101, name: 'item', type: 'object', position: vec3(9, 64, 10) }
   fakeBot.emit('entitySpawn', fakeBot.entities[101])
   setTimeout(() => {
     console.log('  [sim] 掉落物被拾取')
@@ -219,6 +230,15 @@ setTimeout(() => {
     fakeBot.emit('entityGone', { id: 101 })
   }, 800)
 }, 10500)
+
+// 场景1.5: 其他玩家打死的牛 → 假人未攻击过 → 不拾取其掉落物
+setTimeout(() => {
+  console.log('  [sim] 其他玩家击杀牛（假人未攻击）')
+  fakeBot.entities[200] = { id: 200, name: 'cow', type: 'mob', position: vec3(30, 64, 0), height: 1.4, width: 0.9 }
+  fakeBot.emit('entityDead', fakeBot.entities[200])
+  fakeBot.entities[201] = { id: 201, name: 'item', type: 'object', position: vec3(30, 64, 0) }
+  fakeBot.emit('entitySpawn', fakeBot.entities[201])
+}, 16000)
 
 // 场景2: 物品栏装满 → 触发存仓
 setTimeout(() => {
@@ -263,6 +283,9 @@ setTimeout(() => {
   check('发送 /back', chatLog.includes('/back'))
   check('攻击过牛(GoalFollow)', goalsLog.some(g => g.goal === 'GoalFollow'))
   check('拾取掉落物(GoalNear)', goalsLog.some(g => g.goal === 'GoalNear'))
+  check('假人击杀的掉落物被拾取(GoalNear@9,10)', goalsLog.some(g => g.goal === 'GoalNear' && g.x === 9 && g.z === 10))
+  check('他人击杀的掉落物未被拾取(无 GoalNear@30,0)', !goalsLog.some(g => g.goal === 'GoalNear' && g.x === 30 && g.z === 0))
+  check('面向移动方向(look 被调用)', lookCalls.length > 0)
   check('熟猪肉被放入副手(槽45)', fakeBot.inventory.slots[45] && fakeBot.inventory.slots[45].name === 'cooked_porkchop')
   check('副手数量减少(食用完成)', fakeBot.inventory.slots[45] && fakeBot.inventory.slots[45].count === 2)
   check('剑被保留', fakeBot.inventory.slots[15] && fakeBot.inventory.slots[15].name === 'iron_sword')
