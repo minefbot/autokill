@@ -64,7 +64,7 @@ const KILL_CLAIM_MS = 4000        // 击杀归属：最后攻击该目标 4 秒�
 const FACING_TICK_MS = 150        // 寻路中面向移动方向的刷新间隔
 const STUCK_CHECK_MS = 1000       // 卡住检测间隔（秒级采样）
 const STUCK_LIMIT = 3             // 连续 N 秒未移动视为卡住
-const STATUS_LOG_MS = 30000       // 周期状态日志间隔
+const STATUS_LOG_MS = parseInt(process.env.STATUS_LOG_MS || '30000', 10) // 周期状态日志间隔（可用环境变量调细，便于调试）
 const DEPOSIT_WAIT_MS = 3500      // /home cangku 与 /back 后的等待时长
 const EAT_COOLDOWN_MS = 5000      // 食用后 5 秒内不再食用
 const CONTAINER_OP_INTERVAL = 300 // 容器操作限速：两次操作间隔 ≥300ms（一秒最多 4 次，留抖动余量）
@@ -184,7 +184,17 @@ setInterval(() => {
       if (stuckCount >= STUCK_LIMIT && !stuckLogged) {
         stuckLogged = true
         const n = currentPath[0]
-        log(`[路径] 疑似卡住：${STUCK_LIMIT} 秒内位置几乎未动（当前 ${p.floored()}，下一节点 ${n ? n.x + ',' + n.y + ',' + n.z : '无'}）${lastGoalDesc ? '，目标: ' + lastGoalDesc : ''}`)
+        const p = bot.entity.position
+        let diag = `（当前 ${p.floored()}，下一节点 ${n ? n.x + ',' + n.y + ',' + n.z : '无'}）`
+        if (n) {
+          const reqYaw = Math.atan2(-(n.x + 0.5 - p.x), -(n.z + 0.5 - p.z))
+          diag += ` 朝向=${p.yaw.toFixed(2)} 需朝=${reqYaw.toFixed(2)}`
+        }
+        if (typeof bot.getControlState === 'function') {
+          diag += ` 控制状态=${['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(k => k + ':' + bot.getControlState(k)).join(' ')}`
+        }
+        diag += ` onGround=${bot.entity.onGround} 脚下=${bot.blockAt(p) ? bot.blockAt(p).name : '?'}`
+        log(`[路径] 疑似卡住：${STUCK_LIMIT} 秒内位置几乎未动${diag}${lastGoalDesc ? '，目标: ' + lastGoalDesc : ''}`)
       }
     } else {
       stuckCount = 0
@@ -199,7 +209,7 @@ setInterval(() => {
   const pos = bot.entity.position
   const target = findTargetInRange(TARGET_RADIUS)
   const moving = bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' ? bot.pathfinder.isMoving() : false
-  log(`[状态] 坐标=${pos.floored()} 生命=${bot.health} 饱食=${bot.food} 状态=${state}${paused ? '（待机）' : ''} 目标=${target ? target.name + '@' + bot.entity.position.distanceTo(target.position).toFixed(1) + '格' : '无'} 移动中=${moving} 待拾取掉落=${dropIds.size} 实体数=${Object.keys(bot.entities).length}`)
+  log(`[状态] 坐标=${pos.floored()} 朝向=${pos.yaw.toFixed(2)} 生命=${bot.health.toFixed(1)} 饱食=${bot.food} 状态=${state}${paused ? '（待机）' : ''} 目标=${target ? target.name + '@' + bot.entity.position.distanceTo(target.position).toFixed(1) + '格' : '无'} 移动中=${moving} 待拾取掉落=${dropIds.size} 实体数=${Object.keys(bot.entities).length}`)
 }, STATUS_LOG_MS)
 
 // ---------------- 寻路（靠近玩家的方向权重降低） ----------------
