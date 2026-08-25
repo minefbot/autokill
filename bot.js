@@ -192,7 +192,7 @@ setInterval(() => {
         let diag = `（当前 ${p.floored()}，下一节点 ${n ? n.x + ',' + n.y + ',' + n.z : '无'}）`
         if (n) {
           const reqYaw = Math.atan2(-(n.x + 0.5 - p.x), -(n.z + 0.5 - p.z))
-          diag += ` 朝向=${p.yaw.toFixed(2)} 需朝=${reqYaw.toFixed(2)}`
+          diag += ` 朝向=${bot.entity.yaw.toFixed(2)} 需朝=${reqYaw.toFixed(2)}`
         }
         if (typeof bot.getControlState === 'function') {
           diag += ` 控制状态=${['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(k => k + ':' + bot.getControlState(k)).join(' ')}`
