@@ -209,7 +209,7 @@ setInterval(() => {
   const pos = bot.entity.position
   const target = findTargetInRange(TARGET_RADIUS)
   const moving = bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' ? bot.pathfinder.isMoving() : false
-  log(`[状态] 坐标=${pos.floored()} 朝向=${pos.yaw.toFixed(2)} 生命=${bot.health.toFixed(1)} 饱食=${bot.food} 状态=${state}${paused ? '（待机）' : ''} 目标=${target ? target.name + '@' + bot.entity.position.distanceTo(target.position).toFixed(1) + '格' : '无'} 移动中=${moving} 待拾取掉落=${dropIds.size} 实体数=${Object.keys(bot.entities).length}`)
+  log(`[状态] 坐标=${pos.floored()} 朝向=${bot.entity.yaw.toFixed(2)}/${bot.entity.pitch.toFixed(2)} 生命=${bot.health.toFixed(1)} 饱食=${bot.food} 状态=${state}${paused ? '（待机）' : ''} 目标=${target ? target.name + '@' + bot.entity.position.distanceTo(target.position).toFixed(1) + '格' : '无'} 移动中=${moving} 待拾取掉落=${dropIds.size} 实体数=${Object.keys(bot.entities).length}`)
 }, STATUS_LOG_MS)
 
 // ---------------- 寻路（靠近玩家的方向权重降低） ----------------
