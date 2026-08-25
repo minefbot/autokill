@@ -2,6 +2,7 @@
  * 冒烟测试：用假 bot 对象模拟服务器，驱动 bot.js 完整流程（含网页监控）
  * 运行: node test/smoke.js
  * 覆盖：待机模式(无--auto-start) → 网页唤醒 → 聊天收发 → 狩猎/拾取/进食 → 存仓 → 相机/帧率转发 → 3D 视图流
+ * 传送完成判定：以系统聊天出现“传送完成”提示为准（warp 菜单 /home cangku /back 均模拟该提示）
  */
 process.env.PSW = 'testpass'
 process.env.HOST = '127.0.0.1'
@@ -55,13 +56,40 @@ const fakeBot = {
   pathfinder: {
     setGoal (goal, dynamic) { goalsLog.push({ goal: goal && goal.constructor && goal.constructor.name, dynamic }) },
     setMovements () {},
-    stop () {}
+    stop () {},
+    isMoving () { return false } // 模拟寻路不可达（安全点寻路立即中断）
+  },
+  blockAt (pos) {
+    // 模拟地面：y=63 为实心方块（脚下），其余为空气
+    return pos && Math.floor(pos.y) === 63
+      ? { boundingBox: 'block', name: 'grass_block' }
+      : { boundingBox: 'empty', name: 'air' }
   },
   chat (m) {
     chatLog.push(m)
     console.log('  [chat]', m)
-    if (m === '/home cangku') {
-      setTimeout(() => { fakeBot.entity.position = vec3(100, 64, 100); console.log('  [sim] 传送到仓库') }, 300)
+    if (m === '/warp') {
+      // 模拟服务器弹出 warp 菜单（箱子界面）
+      const win = { id: 9, inventoryStart: 27, inventoryEnd: 63, slots: new Array(63).fill(null) }
+      win.slots[1] = { name: '工作点', count: 1, slot: 1 }
+      setTimeout(() => {
+        fakeBot.currentWindow = win
+        fakeBot.emit('windowOpen', win)
+        console.log('  [sim] warp 菜单打开')
+      }, 300)
+    } else if (m === '/home cangku') {
+      // 模拟传送完成：系统聊天出现“传送完成”（部分匹配，bot.js 以此判定成功）
+      setTimeout(() => {
+        fakeBot.entity.position = vec3(100, 64, 100)
+        fakeBot.emit('messagestr', '已传送至仓库点，传送完成！')
+        console.log('  [sim] 传送到仓库（系统提示: 传送完成）')
+      }, 1200)
+    } else if (m === '/back') {
+      setTimeout(() => {
+        fakeBot.entity.position = vec3(10, 64, 10)
+        fakeBot.emit('messagestr', '已返回工作点，传送完成！')
+        console.log('  [sim] 返回工作点（系统提示: 传送完成）')
+      }, 1200)
     }
   },
   attack (e) { console.log('  [attack]', e.name, '@', e.position) },
@@ -72,7 +100,16 @@ const fakeBot = {
   quit (r) { console.log('  [quit]', r) },
   clickWindow (slot, btn, mode) {
     const win = fakeBot.currentWindow || fakeBot.inventory
-    if (slot === -999) { cursor = null; return }
+    if (win && win.id === 9 && slot === 1 && mode === 0) {
+      // warp 菜单：点击第一行第二个物品触发传送，随后系统提示“传送完成”
+      fakeBot.currentWindow = null
+      setTimeout(() => {
+        fakeBot.entity.position = vec3(10, 64, 10)
+        fakeBot.emit('messagestr', 'warp 传送完成！')
+        console.log('  [sim] warp 传送完成（系统提示: 传送完成）')
+      }, 800)
+      return
+    }    if (slot === -999) { cursor = null; return }
     if (mode === 0) {
       if (cursor) {
         const dest = win.slots[slot]
@@ -221,7 +258,7 @@ setTimeout(() => {
 
   console.log('\n===== 主流程断言 =====')
   check('发送 /login testpass', chatLog.includes('/login testpass'))
-  check('发送 /home work', chatLog.includes('/home work'))
+  check('发送 /warp（warp 菜单传送）', chatLog.includes('/warp'))
   check('发送 /home cangku', chatLog.includes('/home cangku'))
   check('发送 /back', chatLog.includes('/back'))
   check('攻击过牛(GoalFollow)', goalsLog.some(g => g.goal === 'GoalFollow'))
