@@ -81,3 +81,16 @@ npm run start:auto          # 或 --auto-start：登录后直接开始工作
 ```bash
 npm test
 ```
+
+诊断工具（`tools/`，均直接连真实服务器，仅调试用）：
+
+```bash
+node tools/move-probe.js     # 移动探针：四方向×普通/潜行/疾跑位移 + 周围方块扫描
+node tools/move-probe2.js    # 细粒度位置/速度/onGround 采样 + forcedMove 监听
+node tools/move-probe3.js    # 出生点 vs 工作点 + 原始 position_look 包
+node tools/move-probe4.js    # 正确 flags 原始位移包（PROBE_USER=xxx 可换账号）
+node tools/move-probe5.js    # 不同地点(/home cangku、/back)复测 + /mail read 后复测
+node tools/mail-read.js      # 读取账号邮件（排查冻结/惩罚通知）
+```
+
+> `STATUS_LOG_MS` 环境变量可调细状态日志间隔（默认 30000ms，调试可设如 8000）。
