@@ -6,10 +6,11 @@
  *  2. 寻找 50 格内的 mooshroom/cow（mooshroom 优先、取最近），寻路保持 ≥2 格距离，
  *     切剑攻击直到目标死亡；拾取死亡 3 秒内、距死亡位置 2 格内的掉落物
  *  3. 避让其他玩家（靠近玩家的方向寻路权重降低，但非完全不可通行）
- *  4. 物品栏满 → /home cangku → 等 3.5s（期间不移动、原地攻击附近目标、不捡掉落物），
- *     坐标未变则重试；传送成功后打开 barrel 把背包中除盔甲/剑/熟猪肉外所有物品
- *     移入容器（限速 4 次/秒），容器满则每秒查看、10s 后每 10s 查看；
- *     放完后 /back 等 3.5s 继续
+ *  4. 物品栏满 → 先寻路到“周围 5 格内无目标”的安全位置，再 /home cangku →
+ *     以系统聊天出现“传送完成”判定传送成功（部分匹配，未收到则重试；期间不移动、
+ *     原地攻击附近目标、不捡掉落物）；传送成功后打开 barrel 把背包中除盔甲/剑/
+ *     熟猪肉外所有物品移入容器（限速 4 次/秒），容器满则每秒查看、10s 后每 10s 查看；
+ *     放完后 /back，同样以“传送完成”提示为准，超时重试
  *  5. 生命<12 且饱和度<=19，或饱食度<16 时，把熟猪肉放入副手（不在副手才手动放），
  *     食用直到数量减少，5s 冷却；熟猪肉耗尽则下线
  *  6. 死亡 → /back 等 3.5s 继续
@@ -78,6 +79,7 @@ const recentDeaths = []     // [{ pos: Vec3, time: number }]
 const dropIds = new Set()   // 已确认掉落物的实体 id
 const deadIds = new Set()   // 已死亡/消失的实体 id
 let avoidPlayers = []       // 需要避让的玩家坐标（定期更新）
+let teleportAck = false     // 是否收到系统“传送完成”提示（传送完成判定依据）
 
 // 网页监控：日志/聊天缓冲
 const logBuffer = []
@@ -331,8 +333,12 @@ function registerEvents () {
     botDead = false
     log('已重生，输入 /back')
     await sleep(1000)
-    bot.chat('/back')
-    await sleep(DEPOSIT_WAIT_MS)
+    for (let i = 0; i < 3; i++) {
+      teleportAck = false
+      bot.chat('/back')
+      if (await waitTeleportDone(DEPOSIT_WAIT_MS + 2000)) break
+      log('未收到“传送完成”提示，重试 /back')
+    }
     state = 'hunt'
     log('返回原位置，继续执行')
   })
@@ -366,6 +372,7 @@ function registerEvents () {
   })
   bot.on('messagestr', (text) => {
     if (/^<[^>]+>/.test(text)) return // 玩家聊天已由 chat 事件处理，避免重复
+    if (text.includes('传送完成')) teleportAck = true // 系统“传送完成”提示（部分匹配）
     log('[系统]', text) // 系统消息也写入日志，便于排查（如死亡提示）
     webBroadcast({ type: 'sys', text })
   })
@@ -552,19 +559,27 @@ async function depositFlow () {
   state = 'deposit'
   bot.pathfinder.setGoal(null)
 
-  // 阶段1: /home cangku，等待 3.5 秒（不移动、原地攻击附近目标、不拾取掉落物），坐标未变则重试
-  let moved = false
-  for (let attempt = 0; attempt < 30 && !moved; attempt++) {
+  // 阶段1: 先寻路到“周围 5 格都没有目标”的安全位置，再 /home cangku；
+  // 以系统聊天出现“传送完成”判定传送成功（部分匹配），未收到则重试
+  await goToSafeSpot()
+  let teleported = false
+  for (let attempt = 0; attempt < 30 && !teleported; attempt++) {
     if (botDead || intentionalQuit || paused) return
-    const before = bot.entity.position.clone()
+    if (!isPositionSafe(bot.entity.position)) { // 等待/重试期间目标可能追过来
+      log('传送位置已不安全，重新寻路')
+      await goToSafeSpot()
+      if (botDead || intentionalQuit || paused) return
+    }
+    teleportAck = false
     bot.chat('/home cangku')
     log(`输入 /home cangku（第 ${attempt + 1} 次）`)
     await waitDefensive(DEPOSIT_WAIT_MS)
     if (state !== 'deposit') return // 期间死亡等中断
-    if (before.distanceTo(bot.entity.position) > 1) { moved = true; break }
-    log('坐标未改变，重试 /home cangku')
+    if (!teleportAck) await waitTeleportDone(2000) // 传送偶尔略慢，再等 2 秒
+    if (teleportAck) { teleported = true; break }
+    log('未收到“传送完成”提示，重试 /home cangku')
   }
-  if (!moved) { log('多次输入 /home cangku 均未传送，稍后重试'); state = 'hunt'; return }
+  if (!teleported) { log('多次输入 /home cangku 均未传送，稍后重试'); state = 'hunt'; return }
 
   // 阶段2: 寻找 barrel 并打开
   let win = await openBarrel()
@@ -620,10 +635,14 @@ async function depositFlow () {
   try { bot.closeWindow(bot.currentWindow) } catch {}
   await sleep(300)
 
-  // 阶段4: /back
-  bot.chat('/back')
-  log('已输入 /back')
-  await sleep(DEPOSIT_WAIT_MS)
+  // 阶段4: /back，以系统“传送完成”提示为准，超时重试
+  for (let i = 0; i < 3; i++) {
+    teleportAck = false
+    bot.chat('/back')
+    log('已输入 /back')
+    if (await waitTeleportDone(DEPOSIT_WAIT_MS + 2000)) break
+    log('未收到“传送完成”提示，重试 /back')
+  }
   state = 'hunt'
   log('返回工作点，继续流程')
 }
@@ -641,12 +660,11 @@ function waitForWindowOpen (timeout) {
  * 1) 发送 /warp（服务器弹出箱子菜单）
  * 2) 等待箱子界面打开
  * 3) 拿起第一行第二个物品（槽位 1，左键点击触发传送）
- * 4) 等 DEPOSIT_WAIT_MS(3.5s) 传送生效，坐标变化即成功；失败则重试直到成功
+ * 4) 以系统聊天出现“传送完成”判定传送成功（部分匹配），未收到则重试直到成功
  */
 async function warpToWork () {
   for (let attempt = 1; ; attempt++) {
     if (botDead || intentionalQuit) return false
-    const before = bot.entity.position.clone()
     bot.chat('/warp')
     log(`已发送 /warp（第 ${attempt} 次）`)
 
@@ -659,6 +677,8 @@ async function warpToWork () {
     }
     const slotItem = win.slots[1]
     log(`warp 菜单已打开（${win.title || '未知标题'}），拿起第一行第二个物品${slotItem ? '：' + slotItem.name : ''}`)
+    // 点击前重置传送完成标记，点击后以系统聊天出现“传送完成”判定成功（部分匹配）
+    teleportAck = false
     try {
       bot.clickWindow(1, 0, 0) // 左键拿起第一行第二个物品，触发传送
       await sleep(600)
@@ -667,18 +687,12 @@ async function warpToWork () {
     }
     try { bot.closeWindow(bot.currentWindow) } catch {}
 
-    // 拿起后等 3.5s 传送生效，再验证坐标变化（传送插件会先提示“3 秒后被传送”）
-    await sleep(DEPOSIT_WAIT_MS)
-    let moved = bot.entity.position.distanceTo(before) > 1
-    if (!moved) {
-      await sleep(2000) // 传送偶尔略慢，再等 2 秒
-      moved = bot.entity.position.distanceTo(before) > 1
-    }
-    if (moved) {
-      log('warp 传送成功')
+    // 等 3.5s 传送生效（传送插件会先提示“3 秒后被传送”），未收到提示再等 2 秒
+    if (await waitTeleportDone(DEPOSIT_WAIT_MS + 2000)) {
+      log('warp 传送完成')
       return true
     }
-    log('warp 传送未生效，2 秒后重试')
+    log('warp 传送未生效（未收到“传送完成”提示），2 秒后重试')
     await sleep(2000)
   }
 }
@@ -728,6 +742,81 @@ async function waitDefensive (ms) {
     }
     await sleep(200)
   }
+}
+
+/** 等待系统聊天出现“传送完成”提示（部分匹配），超时返回 false */
+async function waitTeleportDone (timeoutMs) {
+  const end = Date.now() + timeoutMs
+  while (Date.now() < end) {
+    if (teleportAck) return true
+    if (botDead || intentionalQuit) return false
+    await sleep(200)
+  }
+  return teleportAck
+}
+
+/** 判断某位置周围 5 格内是否有目标（mooshroom/cow） */
+function isPositionSafe (pos) {
+  for (const e of Object.values(bot.entities)) {
+    if (!isTargetEntity(e) || deadIds.has(e.id)) continue
+    if (pos.distanceTo(e.position) <= 5) return false
+  }
+  return true
+}
+
+/** 在机器人周围螺旋搜索一个“周围 5 格无目标”的可站立位置，找不到返回 null */
+function findSafeSpot () {
+  const base = bot.entity.position.floored()
+  for (let r = 1; r <= 24; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue // 只取半径为 r 的环
+        const pos = base.offset(dx, 0, dz)
+        const at = bot.blockAt(pos)
+        const below = bot.blockAt(pos.offset(0, -1, 0))
+        if (!at || !below) continue
+        if (at.boundingBox === 'block') continue // 站立方块必须非实心
+        if (at.name === 'water' || at.name === 'lava' || at.name === 'flowing_water' || at.name === 'flowing_lava') continue
+        if (below.boundingBox !== 'block') continue // 脚下必须是实心方块
+        const stand = pos.offset(0.5, 0, 0.5)
+        if (!isPositionSafe(stand)) continue
+        return stand
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 卸货前寻路到“周围 5 格都没有目标”的安全位置，再执行传送命令。
+ * 到达后目标可能追过来，若仍不安全则重新寻找；多次尝试后仍不行则就地传送。
+ */
+async function goToSafeSpot () {
+  if (isPositionSafe(bot.entity.position)) return // 当前位置已安全，无需移动
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (botDead || intentionalQuit || paused) return
+    const spot = findSafeSpot()
+    if (!spot) {
+      log('未找到安全位置，原地等待 3 秒后重试')
+      await sleep(3000)
+      if (isPositionSafe(bot.entity.position)) return
+      continue
+    }
+    log(`寻路到安全位置 ${spot.floored()}（周围 5 格无目标）`)
+    bot.pathfinder.setGoal(new GoalNear(spot.x, spot.y, spot.z, 1), false)
+    const start = Date.now()
+    while (Date.now() - start < 15000) {
+      if (botDead || intentionalQuit || paused) return
+      await sleep(500)
+      if (bot.entity.position.distanceTo(spot) <= 2) break // 已到达
+      if (!bot.pathfinder.isMoving()) { log('无法寻路到该位置，换位置重试'); break }
+    }
+    bot.pathfinder.setGoal(null)
+    if (botDead || intentionalQuit || paused) return
+    if (isPositionSafe(bot.entity.position)) return // 到达且安全
+    log('到达后仍有目标在 5 格内，重新寻找安全位置')
+  }
+  log('未能到达安全位置，就地执行传送')
 }
 
 // ---------------- 重连 ----------------
