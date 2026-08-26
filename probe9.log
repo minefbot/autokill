@@ -1,0 +1,171 @@
+[17:53:42.647] <- S2C position x= y=undefined z= tid=1 rel=0
+[17:53:42.648] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:42.649] -> C2S position_look x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:42.942] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:42.944] -> C2S flying x=- y=- z=- yaw=- pitch=- og=true hc=undefined
+[17:53:43.119] <- S2C position x= y=undefined z= tid=-1022949213 rel=24
+[17:53:43.119] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:43.120] -> C2S position_look x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:43.138] -> C2S look x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:43.188] -> C2S flying x=- y=- z=- yaw=- pitch=- og=true hc=undefined
+[17:53:43.912] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:44.080] <- S2C position x= y=undefined z= tid=-447139472 rel=24
+[17:53:44.081] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:44.081] -> C2S position_look x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:44.115] -> C2S look x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:44.165] -> C2S flying x=- y=- z=- yaw=- pitch=- og=true hc=undefined
+[17:53:44.922] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:45.937] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:46.953] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:47.965] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:48.973] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:49.982] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:50.992] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:52.001] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:53.010] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:54.019] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.023] -> C2S position x=6289.5000000 y=76 z=-3434.401692 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.328] -> C2S position x=6289.5000000 y=76 z=-3434.303691 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.377] -> C2S position x=6289.5000000 y=76 z=-3434.152183 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.429] -> C2S position x=6289.5000000 y=76 z=-3433.971460 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.479] -> C2S position x=6289.5000000 y=76 z=-3433.774785 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.529] -> C2S position x=6289.5000000 y=76 z=-3433.569400 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.546] <- S2C position x= y=undefined z= tid=-1251977594 rel=24
+[17:53:55.547] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:55.547] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.579] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.630] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.679] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.731] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.748] <- S2C position x= y=undefined z= tid=-1558222092 rel=24
+[17:53:55.749] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:55.749] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.781] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.833] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.882] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.935] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:55.950] <- S2C position x= y=undefined z= tid=-944324547 rel=24
+[17:53:55.950] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:55.951] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.986] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:55.988] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.036] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.086] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.137] -> C2S position x=6289.5000000 y=76 z=-3433.753293 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.154] <- S2C position x= y=undefined z= tid=-854863229 rel=24
+[17:53:56.154] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:56.155] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.188] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.239] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.289] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.339] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.354] <- S2C position x= y=undefined z= tid=-1553106051 rel=24
+[17:53:56.354] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:56.355] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.389] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.440] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.490] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.541] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.559] <- S2C position x= y=undefined z= tid=-1007259752 rel=24
+[17:53:56.559] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:56.560] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.591] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.640] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.691] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.741] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.759] <- S2C position x= y=undefined z= tid=-1416658933 rel=24
+[17:53:56.760] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:56.760] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.792] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.842] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.893] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.945] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:56.976] <- S2C position x= y=undefined z= tid=-1190445532 rel=24
+[17:53:56.977] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:56.977] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:56.996] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.046] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.096] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.145] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.162] <- S2C position x= y=undefined z= tid=-1035167635 rel=24
+[17:53:57.162] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:57.163] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.195] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.247] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.298] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.347] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.364] <- S2C position x= y=undefined z= tid=-1311390141 rel=24
+[17:53:57.364] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:57.365] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.397] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.447] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.498] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.548] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.566] <- S2C position x= y=undefined z= tid=-2121793184 rel=24
+[17:53:57.566] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:57.567] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.598] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.648] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.698] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.747] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.767] <- S2C position x= y=undefined z= tid=-1067772551 rel=24
+[17:53:57.767] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:57.768] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.797] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:57.848] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.899] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.949] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:57.966] <- S2C position x= y=undefined z= tid=-1265732674 rel=24
+[17:53:57.966] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:57.966] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.001] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.051] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.101] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.151] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.169] <- S2C position x= y=undefined z= tid=-2134274029 rel=24
+[17:53:58.169] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:58.170] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.201] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.254] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.303] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.354] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.371] <- S2C position x= y=undefined z= tid=-209764157 rel=24
+[17:53:58.372] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:58.372] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.405] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.455] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.505] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.554] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.571] <- S2C position x= y=undefined z= tid=-353400727 rel=24
+[17:53:58.572] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:58.572] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.605] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.656] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.705] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.756] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.774] <- S2C position x= y=undefined z= tid=-2059440439 rel=24
+[17:53:58.775] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:58.775] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.806] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:58.857] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.907] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.957] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:58.972] <- S2C position x= y=undefined z= tid=-36441324 rel=24
+[17:53:58.972] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:58.972] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.007] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.059] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.109] -> C2S position x=6289.5000000 y=76 z=-3434.114281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.160] -> C2S position x=6289.5000000 y=76 z=-3433.944172 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.176] <- S2C position x= y=undefined z= tid=-127134475 rel=24
+[17:53:59.176] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:59.177] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.210] -> C2S position_look x=6289.5000000 y=76 z=-3434.283784 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.260] -> C2S position x=6289.5000000 y=76 z=-3434.246348 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.309] -> C2S position x=6289.5000000 y=76 z=-3434.212281 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.360] -> C2S position x=6289.5000000 y=76 z=-3434.193680 yaw=-0.00 pitch=0.00 og=true hc=undefined
+[17:53:59.409] <- S2C position x= y=undefined z= tid=-1253164466 rel=24
+[17:53:59.409] -> C2S teleport_confirm x=- y=- z=- yaw=- pitch=- og=undefined hc=-
+[17:53:59.409] -> C2S position_look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.411] -> C2S look x=6289.5000000 y=76 z=-3434.303384 yaw=-0.00 pitch=0.00 og=false hc=undefined
+[17:53:59.462] -> C2S flying x=- y=- z=- yaw=- pitch=- og=true hc=undefined
