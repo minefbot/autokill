@@ -1021,7 +1021,24 @@ function enableTickSync (bot) {
             z: bot.entity.position.z,
             yaw: bot.entity.yaw,
             pitch: bot.entity.pitch,
-            onGround: true
+            onGround: true,
+            teleportId: 0,
+            dx: 0,
+            dy: 0,
+            dz: 0,
+            flags: {
+              _value: 0,
+              x: false,
+              y: false,
+              z: false,
+              yaw: false,
+              pitch: false,
+              dx: false,
+              dy: false,
+              dz: false,
+              yawDelta: false,
+              pitchDelta: false
+            }
           })
         }
       } catch {}
@@ -1070,6 +1087,27 @@ function ensureClientChat (client) {
         // 确保位置更新包包含正确的 onGround 状态
         params.onGround = true
         if (params.flags) params.flags.onGround = true
+        
+        // 确保 position_look 包也有完整的格式
+        if (name === 'position_look') {
+          params.teleportId = params.teleportId || 0
+          params.dx = params.dx || 0
+          params.dy = params.dy || 0
+          params.dz = params.dz || 0
+          params.flags = params.flags || {
+            _value: 0,
+            x: false,
+            y: false,
+            z: false,
+            yaw: false,
+            pitch: false,
+            dx: false,
+            dy: false,
+            dz: false,
+            yawDelta: false,
+            pitchDelta: false
+          }
+        }
       }
       return originalWrite.call(client, name, params)
     }
@@ -1087,7 +1125,24 @@ function ensureClientChat (client) {
               z: client.bot.entity.position.z,
               yaw: client.bot.entity.yaw,
               pitch: client.bot.entity.pitch,
-              onGround: true
+              onGround: true,
+              teleportId: 0,
+              dx: 0,
+              dy: 0,
+              dz: 0,
+              flags: {
+                _value: 0,
+                x: false,
+                y: false,
+                z: false,
+                yaw: false,
+                pitch: false,
+                dx: false,
+                dy: false,
+                dz: false,
+                yawDelta: false,
+                pitchDelta: false
+              }
             })
           }
         } catch {}
